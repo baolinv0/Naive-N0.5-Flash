@@ -32,8 +32,8 @@ from utils.file_utils import read_json_file, write_json_file
 
 import torch
 from photofinishing_model import PhotofinishingModule
-from utils.img_utils import imread, imwrite, img_to_tensor, tensor_to_img, get_psnr, get_ssim, raw_to_lsrgb, imresize
-from baseline_utils import paired_files
+from utils.img_utils import imwrite, img_to_tensor, tensor_to_img, get_ssim
+from baseline_utils import paired_files, load_image_pair, image_psnr_values, summarize_psnr
 
 
 def print_line(end: Optional[bool]=False, length: Optional[int]=30):
@@ -47,12 +47,19 @@ def print_line(end: Optional[bool]=False, length: Optional[int]=30):
 
 def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: str,
              gt_te_dir: str, data_te_dir: str, post_process_ltm: bool, no_ds: bool,
-             result_dir: Optional[str] = None) -> str:
+             result_dir: Optional[str] = None, eval_size: Optional[int] = 512,
+             quarter_resolution: bool = False, recipe: Optional[dict] = None) -> str:
   """Tests a given trained model."""
 
   if data_te_dir is None:
     data_te_dir = os.path.join(os.path.dirname(in_te_dir.rstrip("/\\")), 'data')
 
+  if quarter_resolution or no_ds:
+    eval_size = None
+  protocol = f'P{eval_size}' if eval_size is not None else ('quarter' if quarter_resolution else 'full')
+  if eval_size is not None and post_process_ltm:
+    raise ValueError('P<size> evaluation uses the validation forward path without LTM post-processing')
+  model.eval()
   pairs = paired_files(in_te_dir, gt_te_dir, data_te_dir)
   if result_dir is not None:
     result_dir = os.path.abspath(result_dir)
@@ -65,26 +72,19 @@ def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: st
   rows = []
   for idx, (in_file, gt_file, data_file) in enumerate(pairs):
     print(f'Processing {idx+1}/{len(pairs)}...')
-    raw_img = imread(in_file).astype(np.float32)
-    shape = raw_img.shape
-    gt_img = imread(gt_file).astype(np.float32)
-    metadata = read_json_file(data_file)
-    illum = np.array(metadata['cam_illum'], dtype=np.float32)
-    ccm = np.array(metadata['ccm'], dtype=np.float32)
-    lsrgb_img = raw_to_lsrgb(raw_img, illum_color=illum, ccm=ccm)
-    if not no_ds:
-      target_shape = [shape[0] // 4, shape[1] // 4]
-      lsrgb_img = imresize(lsrgb_img, height=target_shape[0], width=target_shape[1])
-      gt_img = imresize(gt_img, height=target_shape[0], width=target_shape[1])
+    lsrgb_img, gt_img = load_image_pair(in_file, gt_file, data_file, image_size=eval_size,
+                                       quarter=quarter_resolution)
     lsrgb_img_tensor = img_to_tensor(lsrgb_img).unsqueeze(0).to(device=te_device, dtype=torch.float32)
     start = time.time()
     with torch.no_grad():
-      out_img_tensor = model(lsrgb_img_tensor, post_process_ltm=post_process_ltm)['output']
+      out_img_tensor = model(lsrgb_img_tensor, post_process_ltm=post_process_ltm,
+                             training_mode=eval_size is not None)['output']
     end = time.time()
     elapsed = end - start
     total_time += elapsed
     out_img = tensor_to_img(out_img_tensor)
-    psnr[idx] = get_psnr(out_img, gt_img)
+    gt_tensor = img_to_tensor(gt_img).unsqueeze(0).to(device=te_device, dtype=torch.float32)
+    psnr[idx] = image_psnr_values(out_img_tensor, gt_tensor)[0]
     ssim[idx] = get_ssim(out_img, gt_img)
     if result_dir is not None:
       image_path = imwrite(out_img, os.path.join(images_dir, os.path.splitext(os.path.basename(in_file))[0]),
@@ -92,17 +92,22 @@ def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: st
       rows.append({'image': os.path.basename(in_file), 'psnr': float(psnr[idx, 0]),
                    'ssim': float(ssim[idx, 0]), 'time_seconds': elapsed, 'output_image': image_path})
   mean_time = total_time / len(pairs)
+  summary = summarize_psnr(psnr[:, 0].tolist())
   if result_dir is not None:
     csv_path = os.path.join(result_dir, 'per_image.csv')
     with open(csv_path, 'w', newline='') as f:
       writer = csv.DictWriter(f, fieldnames=['image', 'psnr', 'ssim', 'time_seconds', 'output_image'])
       writer.writeheader()
       writer.writerows(rows)
-    write_json_file({'mean_psnr': float(psnr.mean()), 'mean_ssim': float(ssim.mean()),
-                     'mean_time_seconds': mean_time, 'num_images': len(pairs),
+    write_json_file({**summary, 'mean_ssim': float(ssim.mean()),
+                     'protocol': protocol, 'eval_size': eval_size, 'recipe': recipe,
+                     'mean_time_seconds': mean_time,
                      'per_image_csv': csv_path, 'images_dir': images_dir},
                     os.path.join(result_dir, 'metrics.json'))
-  return f'PSNR = {psnr.mean()} - SSIM = {ssim.mean()} - Time = {mean_time}\n'
+  if not summary['finite']:
+    raise ValueError('Evaluation produced non-finite per-image PSNR')
+  return (f"Protocol = {protocol} - PSNR = {summary['mean_psnr']} - SSIM = {ssim.mean()} "
+          f"- Count = {summary['num_images']} - Finite = {summary['finite']} - Time = {mean_time}\n")
 
 def get_args():
   parser = argparse.ArgumentParser(description='Test the photofinishing network.')
@@ -117,13 +122,23 @@ def get_args():
   parser.add_argument('--post-process-ltm', dest='post_process_ltm', action='store_true',
                       help='Enable multi-scale and refinement of the LTM coeffs to mitigate potential halo artifacts '
                            '(refer to Sec. B.1 of the supp materials).')
-  parser.add_argument('--no-ds', dest='no_ds', action='store_true',
-                      help='To disable downsampling before photofinishing.')
+  resolution = parser.add_mutually_exclusive_group()
+  resolution.add_argument('--eval-size', type=int, default=None,
+                          help='Square evaluation size (default 512; standard P512 protocol).')
+  resolution.add_argument('--quarter-resolution', action='store_true',
+                          help='Use the separate legacy quarter-resolution inference protocol.')
+  resolution.add_argument('--no-ds', dest='no_ds', action='store_true',
+                          help='Use the separate full-resolution inference protocol.')
   parser.add_argument('--config-dir', dest='config_dir', default='config',
                       help='Directory containing config JSON files.')
   parser.add_argument('--result-dir', dest='result_dir', default='results',
                       help='Directory to save the results report (.txt).')
-  return parser.parse_args()
+  args = parser.parse_args()
+  if not args.no_ds and not args.quarter_resolution:
+    args.eval_size = 512 if args.eval_size is None else args.eval_size
+    if args.eval_size < 256:
+      parser.error('--eval-size must be at least 256')
+  return args
 
 
 if __name__ == '__main__':
@@ -147,8 +162,8 @@ if __name__ == '__main__':
 
   results = test_net(model=net, te_device=device, in_te_dir=args.in_te_dir, gt_te_dir=args.gt_te_dir,
                      data_te_dir=args.data_te_dir, post_process_ltm=args.post_process_ltm, no_ds=args.no_ds,
-                     result_dir=args.result_dir)
+                     result_dir=args.result_dir, eval_size=args.eval_size,
+                     quarter_resolution=args.quarter_resolution, recipe=config.get('recipe'))
   print(results)
   with open(os.path.join(args.result_dir, os.path.splitext(os.path.basename(args.model_path))[0] + '.txt'), 'w') as f:
     f.write(results)
-

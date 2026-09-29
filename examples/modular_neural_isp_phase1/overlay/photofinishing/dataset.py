@@ -31,10 +31,8 @@ import collections
 import h5py
 
 from utils.constants import PHOTOFINISHING_TRAINING_INPUT_SIZE
-from utils.img_utils import (imread, augment_img, img_to_tensor, raw_to_lsrgb, clip, imresize,
-                             extract_non_overlapping_patches)
-from utils.file_utils import read_json_file
-from baseline_utils import paired_files
+from utils.img_utils import augment_img, img_to_tensor, extract_non_overlapping_patches
+from baseline_utils import paired_files, load_image_pair
 
 class Data(Dataset):
   def __init__(self, in_img_dir: str, gt_img_dir: str, data_dir: Optional[str]=None,
@@ -62,20 +60,19 @@ class Data(Dataset):
     self._temp_dir = join(dirname(gt_img_dir),
                           f'{temp_folder}_{basename(gt_img_dir)}_bs_{batch_size}_sz_{self._image_size}{postfix}')
 
-    re_create = True
-    if exists(self._temp_dir) and overwrite_temp_folder:
-      logging.info('Temporary directory exists. Removing it and re-preprocessing images...')
-      shutil.rmtree(self._temp_dir)
-    elif exists(self._temp_dir):
-      re_create = False
-    else:
-      os.makedirs(self._temp_dir)
-
+    completion_marker = join(self._temp_dir, 'COMPLETE')
+    re_create = overwrite_temp_folder or not exists(completion_marker)
     if re_create:
+      if exists(self._temp_dir):
+        logging.info('Rebuilding overwritten or incomplete preprocessing cache.')
+        shutil.rmtree(self._temp_dir)
+      os.makedirs(self._temp_dir)
       logging.info(f'Preprocessing images with batch_size={batch_size}...')
       self._create_hdf5_files()
+      with open(completion_marker, 'w') as marker:
+        marker.write('complete\n')
     else:
-      logging.info(f'Found pre-extracted batches in {self._temp_dir}; skipping reprocessing.')
+      logging.info(f'Found complete pre-extracted batches in {self._temp_dir}; skipping reprocessing.')
 
     self._h5_file_paths = sorted([join(self._temp_dir, f) for f in os.listdir(self._temp_dir) if f.endswith('.h5')])
     self._h5_cache: 'collections.OrderedDict[str, h5py.File]' = collections.OrderedDict()
@@ -129,12 +126,8 @@ class Data(Dataset):
     pairs = paired_files(self._in_img_dir, self._gt_img_dir, self._data_dir)
     for i, (in_img_path, gt_img_path, data_path) in enumerate(pairs):
       print(f'Processing {i}/{len(pairs)} ...')
-      in_img = imread(in_img_path)
-      gt_img = imread(gt_img_path)
-      metadata = read_json_file(data_path)
-      illum = np.array(metadata['cam_illum'], dtype=np.float32)
-      ccm = np.array(metadata['ccm'], dtype=np.float32)
-      in_img = clip(raw_to_lsrgb(in_img, illum_color=illum, ccm=ccm))
+      in_img, gt_img = load_image_pair(in_img_path, gt_img_path, data_path,
+                                        image_size=None if self._extract_patches else self._image_size)
       if self._extract_patches:
         patches = extract_non_overlapping_patches(img=in_img, gt_img=gt_img, num_patches=0,
                                                   patch_size=self._image_size, allow_overlap=True,
@@ -148,8 +141,8 @@ class Data(Dataset):
             gt_images = []
             file_counter += 1
       else:
-        in_images.append(imresize(in_img, height=self._image_size, width=self._image_size))
-        gt_images.append(imresize(gt_img, height=self._image_size, width=self._image_size))
+        in_images.append(in_img)
+        gt_images.append(gt_img)
         if len(in_images) == self._batch_size:
           self._write_hdf5(file_counter, in_images, gt_images)
           in_images = []
@@ -165,4 +158,3 @@ class Data(Dataset):
     with h5py.File(fname, 'w') as f:
       f.create_dataset('in_images', data=np.stack(in_images), compression='gzip')
       f.create_dataset('gt_images', data=np.stack(gt_images), compression='gzip')
-

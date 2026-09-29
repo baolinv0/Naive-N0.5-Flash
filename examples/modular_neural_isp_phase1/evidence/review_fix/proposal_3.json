@@ -1,0 +1,12 @@
+{
+  "recipe": {
+    "loss_family": "original",
+    "learning_rate": 0.0002
+  },
+  "hypothesis": "Both single pixel losses underperformed the original composite recipe in the observed one-epoch fixture. Retain the current best loss and test doubling only the learning rate for faster fitting at this fixed tiny budget. Engineering proposal by the assistant, not Naive; no production recommendation.",
+  "based_on": {
+    "run_id": "exp_003",
+    "dev_psnr": 22.47858587788975,
+    "observation": "L1 scored22.47859 dB, above MSE22.26743 but below original22.67447. The next recipe inherits the best original recipe and changes only learning_rate."
+  }
+}

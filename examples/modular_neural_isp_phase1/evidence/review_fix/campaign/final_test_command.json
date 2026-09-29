@@ -1,0 +1,18 @@
+[
+  "/workspace/scratch/4578f81f7dfe/isp-venv/bin/python",
+  "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/test.py",
+  "--model-path",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/models/photofinishing_exp_004-best.pth",
+  "--config-dir",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/config",
+  "--in-testing-dir",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/denoised_raw_images",
+  "--gt-testing-dir",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/srgb_images_style_0",
+  "--result-dir",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test",
+  "--eval-size",
+  "256",
+  "--data-testing-dir",
+  "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/data"
+]

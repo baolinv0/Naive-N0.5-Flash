@@ -1,0 +1,2 @@
+image,psnr,ssim,time_seconds,output_image
+synthetic_validation_000.png,24.8013607872114,0.9662439823150635,3.158632516860962,/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/images/synthetic_validation_000.png

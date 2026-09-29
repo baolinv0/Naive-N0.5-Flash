@@ -1,0 +1,11 @@
+{
+  "recipe": {
+    "loss_family": "mse"
+  },
+  "hypothesis": "The original multi-loss recipe reaches 22.67447 dB after the fixed one-epoch synthetic run. Test whether optimizing final RGB MSE directly improves this same dev criterion; change only the loss family. Engineering integration proposal by the assistant, not Naive.",
+  "based_on": {
+    "run_id": "exp_001",
+    "dev_psnr": 22.67446858712745,
+    "observation": "Independent checkpoint reload succeeded on one P256 dev image; this is the initial observed score, not a real-camera benchmark."
+  }
+}

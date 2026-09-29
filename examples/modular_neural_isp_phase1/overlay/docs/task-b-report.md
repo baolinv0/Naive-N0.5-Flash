@@ -1,3 +1,5 @@
+> 历史记录：本文件描述最初 baseline 阶段。当前功能、协议和范围以 [engineering-contract.md](engineering-contract.md) 和 [review-fix-verification.md](review-fix-verification.md) 为准。
+
 # Task B implementation report
 
 - Added optional `tm_research.naive_adapter` with a lazy Transformers model loader, official `apply_chat_template` use, OpenAI-style JSON tool history conversion, normal Naive XML tool parsing, and a standard-library streamed Chat Completions HTTP route.

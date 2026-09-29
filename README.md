@@ -187,4 +187,4 @@ For questions, feedback, or collaboration, please contact us at contact@naive.ai
 
 ## Modular Neural ISP engineering example
 
-[Original ISP Phase 1](examples/modular_neural_isp_phase1/) provides the baseline runner, optional Naive tool-call adapter, reproducible CPU smoke test, and downloadable engineering package. Real-data training and live Naive/ARIS validation remain pending.
+[Modular Neural ISP recipe research](examples/modular_neural_isp_phase1/) provides the original baseline, controlled loss/optimizer/LR experiments, independent DEV evaluation, a persistent feedback-driven campaign, and an ARIS-Code task for a Naive executor. CPU synthetic training evidence is included; real-data gains and live Naive/ARIS validation remain pending. The original Phase 1 ZIP is retained as a historical baseline package.

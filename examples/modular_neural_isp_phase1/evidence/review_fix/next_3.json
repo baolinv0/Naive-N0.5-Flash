@@ -1,0 +1,117 @@
+{
+  "proposal_allowed": true,
+  "status": "ready",
+  "stop_reason": null,
+  "active": null,
+  "best": {
+    "run_id": "exp_001",
+    "dev_psnr": 22.67446858712745,
+    "recipe": {
+      "loss_family": "original",
+      "optimizer": "adam",
+      "learning_rate": 0.0001,
+      "weight_decay": 1e-07
+    }
+  },
+  "fixed": {
+    "epochs": 1,
+    "batch_size": 1,
+    "in_size": 256,
+    "eval_size": 256,
+    "validation_frequency": 1,
+    "num_workers": 0,
+    "repo_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp",
+    "python": "/workspace/scratch/4578f81f7dfe/isp-venv/bin/python",
+    "runs_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs",
+    "seed": 7,
+    "init_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth",
+    "init_config_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/config",
+    "train": {
+      "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/denoised_raw_images",
+      "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/srgb_images_style_0",
+      "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/data"
+    },
+    "validation": {
+      "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/denoised_raw_images",
+      "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/srgb_images_style_0",
+      "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/data"
+    }
+  },
+  "remaining_trials": 1,
+  "no_gain_count": 2,
+  "no_gain_limit": 3,
+  "history": [
+    {
+      "run_id": "exp_001",
+      "recipe": {
+        "loss_family": "original",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "status": "completed",
+      "result_status": "valid",
+      "valid": true,
+      "dev_psnr": 22.67446858712745,
+      "error": null,
+      "decision": "Baseline establishes the initial DEV score.",
+      "proposal": {
+        "hypothesis": "Establish the fixed-budget baseline.",
+        "based_on": null
+      }
+    },
+    {
+      "run_id": "exp_002",
+      "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "status": "completed",
+      "result_status": "no_gain",
+      "valid": true,
+      "dev_psnr": 22.267426134535206,
+      "error": null,
+      "decision": "DEV PSNR 22.26742613 did not exceed best 22.67446859; retain the best recipe.",
+      "proposal": {
+        "recipe": {
+          "loss_family": "mse"
+        },
+        "hypothesis": "The original multi-loss recipe reaches 22.67447 dB after the fixed one-epoch synthetic run. Test whether optimizing final RGB MSE directly improves this same dev criterion; change only the loss family. Engineering integration proposal by the assistant, not Naive.",
+        "based_on": {
+          "run_id": "exp_001",
+          "dev_psnr": 22.67446858712745,
+          "observation": "Independent checkpoint reload succeeded on one P256 dev image; this is the initial observed score, not a real-camera benchmark."
+        }
+      }
+    },
+    {
+      "run_id": "exp_003",
+      "recipe": {
+        "loss_family": "l1",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "status": "completed",
+      "result_status": "no_gain",
+      "valid": true,
+      "dev_psnr": 22.47858587788975,
+      "error": null,
+      "decision": "DEV PSNR 22.47858588 did not exceed best 22.67446859; retain the best recipe.",
+      "proposal": {
+        "recipe": {
+          "loss_family": "l1"
+        },
+        "hypothesis": "Pure MSE fell 0.40704 dB below the original recipe at the same budget. Compare pure L1 with the same optimizer and rate to test whether the pixel-loss gradient weighting explains this fixture behavior. Engineering proposal by the assistant, not Naive.",
+        "based_on": {
+          "run_id": "exp_002",
+          "dev_psnr": 22.267426134535206,
+          "observation": "MSE was valid but no_gain; original remains best at 22.67446859 dB. No general claim follows from a one-epoch synthetic fixture."
+        }
+      }
+    }
+  ],
+  "prompt": "Read every prior DEV result below and propose exactly one changed recipe. Explain the expected effect, and cite an observed prior run and its DEV score in based_on (rounding within 0.0001 dB is accepted). Use the latest failure or gain to choose the next change; do not submit an unevaluated fixed grid. You may change only loss_family (original|mse|l1), optimizer (adam|adamw), learning_rate, and weight_decay. Keep the model, data, initialization, seed, epochs, batch size, image sizes and validation frequency fixed. Selection uses independently reloaded mean per-image DEV PSNR. Never inspect TEST for a proposal. Write JSON with recipe, hypothesis, and based_on={run_id,dev_psnr,observation}, then call campaign submit. Wait for the actual run and call campaign next again. Stop when proposal_allowed is false."
+}
