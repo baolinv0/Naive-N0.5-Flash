@@ -183,3 +183,8 @@ For questions, feedback, or collaboration, please contact us at contact@naive.ai
 [coding-pdf]: assets/coding-benchmarks.pdf
 [ai-rd-figure]: assets/ai-rd-benchmarks.png
 [ai-rd-pdf]: assets/ai-rd-benchmarks.pdf
+
+
+## Modular Neural ISP engineering example
+
+[Original ISP Phase 1](examples/modular_neural_isp_phase1/) provides the baseline runner, optional Naive tool-call adapter, reproducible CPU smoke test, and downloadable engineering package. Real-data training and live Naive/ARIS validation remain pending.

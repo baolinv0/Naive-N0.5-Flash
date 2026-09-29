@@ -1,0 +1,27 @@
+# Relative paths are resolved from this YAML file's directory.
+repo_dir: ..
+# Uses the active environment. An absolute Python executable also works.
+python: python
+runs_dir: ../runs
+train:
+  input_dir: /path/to/train/input
+  gt_dir: /path/to/train/gt
+  metadata_dir: /path/to/train/data
+validation:
+  input_dir: /path/to/validation/input
+  gt_dir: /path/to/validation/gt
+  metadata_dir: /path/to/validation/data
+test:
+  input_dir: /path/to/test/input
+  gt_dir: /path/to/test/gt
+  metadata_dir: /path/to/test/data
+# Omit these knobs to retain upstream train.py defaults (600 epochs,
+# batch size 8, 512 input size, validation every 4 epochs, 12 workers).
+# epochs: 2
+# batch_size: 8
+# in_size: 512
+# validation_frequency: 4
+# num_workers: 12
+# init_checkpoint: /path/to/model.pth
+# init_config_dir: /path/to/config
+# seed: 1

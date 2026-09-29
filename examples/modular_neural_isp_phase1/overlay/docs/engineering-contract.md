@@ -1,0 +1,18 @@
+# Shared implementation contract
+
+Goal: original Samsung photofinishing baseline only. Keep architecture, loss weights, optimizer, schedules, augmentation, and official input preprocessing. No teacher/style transfer/new losses/search. User requires function-first, no security framework, no content fingerprints/revision strings in added files, no extreme-case test matrix, no mechanical reviewer scores.
+
+Work root: /workspace/scratch/4578f81f7dfe/modular_neural_isp
+Python: /workspace/scratch/4578f81f7dfe/isp-venv/bin/python (dependencies being installed by root).
+Agent A owns photofinishing/{train,test,dataset}.py and new photofinishing/baseline_utils.py; tests/test_isp_baseline.py. Do not change model/loss recipe. It may fix loss initialization only if needed without changing active recipe.
+Agent B owns tm_research/naive_adapter.py, tests/test_naive_adapter.py, configs/aris.example.json, docs/naive-setup.md. No __init__ edits.
+Agent C owns tm_research/{__init__,runner,cli}.py, tests/test_runner.py, configs/baseline.example.yaml, docs/tm_research_task.md. No __init__ changes by others.
+Root owns README_PHASE1.md, scripts, packaging, pyproject/pytest configuration, dependencies and integration verification.
+
+A adds train --output-dir ROOT (default original directory), --num-workers (default upstream 12), --seed optional, --load-config-dir optional for checkpoint configs. ORIGINAL algorithm defaults remain untouched. Output root contains models/photofinishing_<exp-name>-best.pth and config/same-stem.json, checkpoints/, logs/, metrics.json (mean_psnr for image-wise, original_batch_psnr, best_checkpoint, config_dir; paths absolute). Always validate final epoch so tiny run works. Original best model criterion can stay legacy corrected mean-batch metric, explicitly named. Expose seed only optional. Do not implement new optimization.
+A test adds --result-dir existing output: also metrics.json and per_image.csv and output images. Preserve quarter resize default and --no-ds.
+C calls existing photofinishing/train.py with --output-dir <run>/train, then photofinishing/test.py with trained model and config-dir <run>/train/config and result-dir <run>/test. A must confirm exact telemetry fields to C.
+C config: repo_dir, python, runs_dir, train:{input_dir,gt_dir,metadata_dir}, validation:same, test:same(optional), epochs(optional original600), batch_size(optional original8), in_size(optional original512), validation_frequency, num_workers, init_checkpoint(optional), init_config_dir(optional), seed(optional). Pass only specified training hyperparameters. runs/results.jsonl or csv and run state files. Function run_baseline(config)->run_id (start background worker), get_result(run_id,runs_dir=...) returns dict. CLI baseline --config / status --run --runs-dir / wait / report / commands(dry command display). Explicit failures + saved logs; no custom scheduler or sandbox. No checkpoint resume unless A implements it; report restart semantics honestly.
+B optional local adapter: official Naive template -> OpenAI-compatible streamed /v1/chat/completions, tools and tool result history. Lazy transformers imports (so protocol tests require no weights). Can use stdlib HTTP server. Existing compatible service can be configured directly. Parser needs normal calls, multiline args, plain reply; avoid elaborate security cases. Do not pretend fixture roundtrip is real Naive.
+
+Tests: small meaningful tests for pairing, PSNR aggregation, HDF5 reread; real process runner using tiny script fixture; normal streamed tool loop via injected generator. Root will attempt official weight CPU forward and short original training on clearly-labeled synthetic data. No real GPU/data/service is currently configured.

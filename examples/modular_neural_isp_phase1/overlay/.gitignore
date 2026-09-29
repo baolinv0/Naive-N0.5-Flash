@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+experiments/
+runs/
+smoke_data/
+.venv/
+*.egg-info/

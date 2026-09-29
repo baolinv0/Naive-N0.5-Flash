@@ -1,0 +1,6 @@
+{
+  "executor_provider": "openai",
+  "executor_api_key": "local-naive",
+  "executor_base_url": "http://127.0.0.1:8000/v1",
+  "executor_model": "NaiveAI/Naive-N0.5-Flash-FP8"
+}
