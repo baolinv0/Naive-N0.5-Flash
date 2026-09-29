@@ -1,0 +1,24 @@
+{
+  "checkpoint_ranking": {
+    "scores": {
+      "A": {"image_mean_psnr": 30.0, "batch_psnr": 22.967086218813385},
+      "B": {"image_mean_psnr": 26.989700043360187, "batch_psnr": 26.989700043360187}
+    },
+    "current_selects": "B",
+    "planned_metric_selects": "A"
+  },
+  "commands": {
+    "same_repo_train_path": "/tmp/tmp_win1j8p/upstream/photofinishing/train.py",
+    "auto_test_present": true,
+    "fixed_test_size_supported": false,
+    "learning_rate_flag_present": false
+  },
+  "learning_rate_config": "Unsupported config fields: ['learning_rate']",
+  "completion_without_checkpoint": {"status": "completed", "checkpoint_exists": false, "mean_psnr_is_finite": false},
+  "unclosed_think": {"content": "<think>Planning an experiment", "parsed_calls": [["run_baseline", {"config": {"epochs": 2}}]]},
+  "missing_required": {"content": "", "parsed_calls": [["run_baseline", {}]]},
+  "wrong_type": {"content": "", "parsed_calls": [["run_baseline", {"config": 2}]]},
+  "truncated_call": {"content": "<tool_call><function=run_baseline><parameter=config>{\"epochs\":", "parsed_calls": []},
+  "metric_exact_match": "inf",
+  "metric_nan_prediction": "nan"
+}
