@@ -1,0 +1,20 @@
+{
+  "python": "3.13.5",
+  "torch": "2.10.0+cpu",
+  "cuda_available": false,
+  "reviewed_commit": "53fa505c5ecba44f89f21fc8fbf3c090d2ab25c8",
+  "source_acquisition": "GitHub connector fetch_file; fetched text saved locally for selected-module execution; git clone unavailable (DNS failure)",
+  "tested_modules": [
+    "tm_research/naive_adapter.py",
+    "tm_research/runner.py",
+    "tm_research/cli.py",
+    "photofinishing/baseline_utils.py"
+  ],
+  "not_executed": [
+    "real Naive inference",
+    "live ARIS-Code integration",
+    "Samsung complete pipeline",
+    "real dataset train/eval",
+    "4 tests importing upstream train/dataset modules"
+  ]
+}
