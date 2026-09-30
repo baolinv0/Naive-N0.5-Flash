@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .runner import (_worker, commands_for_run, get_result, load_config,
                      run_baseline, wait_for_result)
-from .campaign import (campaign_status, final_test, finalize_campaign, initialize_campaign,
+from .campaign import (DEFAULT_MIN_DELTA, campaign_status, final_test, finalize_campaign, initialize_campaign,
                        next_proposal, submit_proposal, wait_campaign)
 
 
@@ -35,6 +35,8 @@ def main(argv=None):
             command.add_argument('--config', required=True)
             command.add_argument('--max-trials', type=int, default=5)
             command.add_argument('--no-gain-limit', type=int, default=3)
+            command.add_argument('--min-delta', type=float, default=DEFAULT_MIN_DELTA,
+                                 help='Frozen effective DEV gain threshold in dB (default: 0.01; calibrate before live use)')
         if name in ('init', 'submit'):
             command.add_argument('--wait', action='store_true', help='Block through training; otherwise use campaign wait')
         if name == 'submit':
@@ -57,7 +59,8 @@ def main(argv=None):
         elif args.action == 'campaign':
             if args.campaign_action == 'init':
                 result = initialize_campaign(load_config(args.config), args.campaign_dir,
-                                             args.max_trials, args.no_gain_limit, wait=args.wait)
+                                             args.max_trials, args.no_gain_limit, wait=args.wait,
+                                             min_delta=args.min_delta)
             elif args.campaign_action == 'submit':
                 proposal = json.loads(Path(args.proposal).read_text(encoding='utf-8'))
                 result = submit_proposal(args.campaign_dir, proposal, wait=args.wait)

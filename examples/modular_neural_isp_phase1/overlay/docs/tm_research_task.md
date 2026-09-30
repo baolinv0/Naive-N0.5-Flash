@@ -22,7 +22,7 @@ Each run stores `config.json`, exact `commands.json`, `state.json`, worker/train
 ## Serial persistent campaign
 
 ```bash
-python -m tm_research.cli campaign init --config configs/baseline.example.yaml --campaign-dir runs/campaign --max-trials 5 --no-gain-limit 3 --wait
+python -m tm_research.cli campaign init --config configs/baseline.example.yaml --campaign-dir runs/campaign --max-trials 4 --no-gain-limit 3 --min-delta 0.01 --wait
 python -m tm_research.cli campaign next --campaign-dir runs/campaign
 # An agent reads that real feedback and writes proposal.json.
 python -m tm_research.cli campaign submit --campaign-dir runs/campaign --proposal proposal.json --wait
@@ -34,7 +34,11 @@ python -m tm_research.cli campaign finalize --campaign-dir runs/campaign
 python -m tm_research.cli final-test --campaign-dir runs/campaign
 ```
 
-`init` launches the baseline first. `max_trials` includes that baseline; each unsuccessful candidate (invalid or no gain) increments the consecutive `no_gain_limit` counter. Improvement resets that counter. An invalid baseline stops the campaign because there is no valid reference score. `finalize` can also deliberately stop a campaign early and freezes the best valid DEV run. Proposals are rejected afterward. The separate `final-test` command never changes the DEV selection.
+`init` launches the baseline first. `max_trials` includes that baseline; `4` means baseline plus three proposals. Each unsuccessful candidate (invalid or no gain) increments the consecutive `no_gain_limit` counter. Only effective improvement resets that counter. An invalid baseline stops the campaign because there is no valid reference score. Proposals are rejected after `finalize`; the separate `final-test` command never changes the DEV selection.
+
+`min_delta` is frozen in `campaign.json` at initialization, in dB. `raw_best` records any higher valid DEV score. `best` retains the baseline or the latest effective improvement: a candidate must score **strictly greater than `best.dev_psnr + min_delta`** to replace it and receive `improved`. A smaller positive gain is valid but `no_gain`, even if it updates `raw_best`. Comparisons stay anchored to the last effective best, so several small gains can eventually cross the threshold. Proposal inheritance and `finalize` use `best`; they do not promote a raw-best fluctuation.
+
+The default and example `0.01` dB are engineering starting values, not a measured statistical threshold. Before a live campaign, repeat independent DEV reloads of the same checkpoint on the target hardware/protocol, retain those metrics, and choose a threshold above the observed numerical spread. Record that choice and pass it explicitly with `--min-delta`. Do not adjust it after seeing candidate results. This controls evaluation noise; it does not replace multi-seed confirmation of training gains. Zero explicitly restores the former any-positive-gain rule. Existing campaign files without `min_delta` keep that original zero-threshold rule and initialize `raw_best` from their existing `best`; start a new campaign to use a calibrated threshold rather than revising historical decisions.
 
 An example proposal shape follows. Its reference must name an actual run from `campaign next` and its observed DEV score; the numbers below are illustrative. Rounding within `0.0001` dB is accepted, and comparisons always use the full recorded score. Invalid runs are cited with `dev_psnr: null`. Recipe fields omitted from a proposal inherit the current best recipe.
 
@@ -54,6 +58,6 @@ The controller checks the citation and allowed controls, executes the real runne
 
 Without `--wait`, `init` and `submit` return the pending run immediately. Use `campaign wait --campaign-dir runs/campaign --timeout 60` or `status` to collect its result; `next` also collects completed work. This supports restarting the host while a worker continues. Some sandboxes terminate all children when a tool call exits: use `--wait` there and keep the tool execution session alive. A timeout leaves the pending run intact; inspect its logs before retrying. There is no automatic recovery of training interrupted midway. If a worker was killed before it ever began (`queued`, empty worker log, no training output), the internal `_worker --run-dir <run-directory>` can run that queued task in the foreground, followed by `campaign wait` to collect it.
 
-Python campaign functions are `initialize_campaign(config, campaign_dir, max_trials=5, no_gain_limit=3, wait=True)`, `next_proposal(campaign_dir)`, `submit_proposal(campaign_dir, proposal, wait=True)`, `campaign_status(campaign_dir)`, `wait_campaign(campaign_dir, timeout=None)`, `finalize_campaign(campaign_dir)`, and `final_test(campaign_dir)`. These use the same persisted state as the CLI. Re-running a terminal worker does not retrain it, and repeated final-test calls reuse only a previously validated report whose metric file still exists. No hashes or content digests are maintained.
+Python campaign functions are `initialize_campaign(config, campaign_dir, max_trials=5, no_gain_limit=3, wait=True, *, min_delta=0.01)`, `next_proposal(campaign_dir)`, `submit_proposal(campaign_dir, proposal, wait=True)`, `campaign_status(campaign_dir)`, `wait_campaign(campaign_dir, timeout=None)`, `finalize_campaign(campaign_dir)`, and `final_test(campaign_dir)`. These use the same persisted state as the CLI. Re-running a terminal worker does not retrain it, and repeated final-test calls reuse only a previously validated report whose metric file still exists. No hashes or content digests are maintained.
 
 Tests in `test_runner.py` and `test_campaign.py` use substitute tiny train/reload scripts and a clearly labeled simulated proposer. They verify orchestration and feedback decisions, not ISP quality or live Naive/ARIS operation. Real-model CPU integration and live service evidence must be reported separately.

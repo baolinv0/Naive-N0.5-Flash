@@ -7,6 +7,7 @@ import pytest
 
 from tm_research.campaign import (campaign_status, final_test, finalize_campaign,
     initialize_campaign, next_proposal, submit_proposal, wait_campaign)
+from tm_research.cli import main
 from test_runner import config
 
 
@@ -75,6 +76,72 @@ def test_no_gain_stops_and_keeps_baseline(tmp_path):
     assert not next_proposal(directory)['proposal_allowed']
 
 
+def test_tiny_raw_gains_stop_without_replacing_effective_best(tmp_path):
+    cfg = config(tmp_path)
+    script = Path(cfg['repo_dir']) / 'photofinishing' / 'test.py'
+    script.write_text(script.read_text().replace("if mode=='nonfinite':",
+        "score={'original':25.0,'mse':25.000001,'l1':25.000002}[recipe['loss_family']]\nif mode=='nonfinite':"))
+    directory = tmp_path / 'campaign'
+    baseline = initialize_campaign(cfg, directory, max_trials=8, no_gain_limit=2)
+    state = submit_proposal(directory, proposal(next_proposal(directory), {'loss_family': 'mse'}))
+    assert state['trials'][-1]['result_status'] == 'no_gain'
+    assert state['no_gain_count'] == 1
+    evidence = next_proposal(directory)
+    assert evidence['raw_best']['dev_psnr'] == 25.000001
+    assert evidence['best'] == baseline['best']
+    assert evidence['min_delta'] > 0.000002
+    state = submit_proposal(directory, proposal(evidence, {'loss_family': 'l1'}))
+    assert state['no_gain_count'] == 2 and state['stop_reason'] == 'no_gain_limit'
+    assert state['raw_best']['dev_psnr'] == 25.000002
+    assert finalize_campaign(directory)['frozen']['run_id'] == baseline['best']['run_id']
+
+
+def test_cli_min_delta_uses_last_effective_best_across_status_reads(tmp_path, capsys):
+    cfg = config(tmp_path)
+    script = Path(cfg['repo_dir']) / 'photofinishing' / 'test.py'
+    script.write_text(script.read_text().replace("if mode=='nonfinite':",
+        "score=25+(score-20)*0.03125\nif mode=='nonfinite':"))
+    config_path = tmp_path / 'config.json'
+    config_path.write_text(json.dumps(cfg))
+    directory = tmp_path / 'campaign'
+    assert main(['campaign', 'init', '--config', str(config_path), '--campaign-dir', str(directory),
+                 '--max-trials', '4', '--min-delta', '0.125', '--wait']) == 0
+    baseline = json.loads(capsys.readouterr().out)
+    assert baseline['min_delta'] == 0.125
+    # 25.0625 and exactly 25.125 are not > baseline + min_delta.
+    for overrides in ({'loss_family': 'mse'}, {'loss_family': 'mse', 'optimizer': 'adamw'}):
+        state = submit_proposal(directory, proposal(next_proposal(directory), overrides))
+        assert state['trials'][-1]['result_status'] == 'no_gain'
+        assert state['best'] == baseline['best']
+    assert state['raw_best']['dev_psnr'] == 25.125 and state['no_gain_count'] == 2
+    overrides = {'loss_family': 'mse', 'optimizer': 'adamw', 'learning_rate': 0.00005}
+    state = submit_proposal(directory, proposal(next_proposal(directory), overrides))
+    assert state['trials'][-1]['result_status'] == 'improved'
+    assert state['best']['dev_psnr'] == state['raw_best']['dev_psnr'] == 25.15625
+    assert state['min_delta'] == 0.125 and state['no_gain_count'] == 0
+
+
+def test_legacy_campaign_keeps_original_zero_threshold(tmp_path):
+    cfg = config(tmp_path)
+    directory = tmp_path / 'campaign'
+    initialize_campaign(cfg, directory)
+    path = directory / 'campaign.json'
+    state = json.loads(path.read_text())
+    state.pop('min_delta', None)
+    state.pop('raw_best', None)
+    path.write_text(json.dumps(state))
+    evidence = next_proposal(directory)
+    assert evidence['min_delta'] == 0 and evidence['raw_best'] == evidence['best']
+
+
+@pytest.mark.parametrize('min_delta', [-0.01, float('nan')])
+def test_min_delta_must_be_nonnegative_and_finite(tmp_path, min_delta):
+    directory = tmp_path / 'campaign'
+    with pytest.raises(ValueError, match='min_delta'):
+        initialize_campaign(config(tmp_path), directory, min_delta=min_delta)
+    assert not directory.exists()
+
+
 def test_invalid_baseline_stops_without_best(tmp_path):
     cfg = config(tmp_path, 'nonfinite')
     directory = tmp_path / 'campaign'
@@ -90,7 +157,7 @@ def test_proposal_must_cite_real_score_and_only_change_recipe(tmp_path):
     directory = tmp_path / 'campaign'
     initialize_campaign(cfg, directory)
     evidence = next_proposal(directory)
-    for field in ('epochs', 'seed', 'eval_size', 'init_checkpoint', 'test', 'architecture'):
+    for field in ('epochs', 'seed', 'eval_size', 'init_checkpoint', 'test', 'architecture', 'min_delta'):
         bad = proposal(evidence, {'loss_family': 'mse', field: 10})
         with pytest.raises(ValueError, match='Recipe supports only'):
             submit_proposal(directory, bad)

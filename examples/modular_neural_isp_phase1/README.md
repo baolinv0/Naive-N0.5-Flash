@@ -6,6 +6,7 @@
 - [运行说明](overlay/README_PHASE1.md)
 - [当前研究合同](overlay/docs/engineering-contract.md)
 - [本轮实现与实测记录](overlay/docs/review-fix-verification.md)
+- [二次 review 后续修复与验证](overlay/docs/rereview-followup.md)
 - [ARIS 任务入口](overlay/docs/tm_research_task.md)
 - [原审查意见与证据](review/README.md)
 

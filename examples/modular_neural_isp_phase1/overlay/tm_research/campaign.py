@@ -12,6 +12,10 @@ from .runner import (BUDGET_DEFAULTS, RECIPE_DEFAULTS, _execute, _now, _resolve_
                      wait_for_result)
 
 
+# Engineering default only; calibrate on repeated DEV reloads before a live campaign.
+DEFAULT_MIN_DELTA = 0.01
+
+
 @contextmanager
 def _locked(directory):
     directory = Path(directory).resolve()
@@ -25,7 +29,11 @@ def _locked(directory):
 
 
 def _read(directory):
-    return json.loads((Path(directory) / 'campaign.json').read_text(encoding='utf-8'))
+    state = json.loads((Path(directory) / 'campaign.json').read_text(encoding='utf-8'))
+    # Preserve the decision rule of campaigns created before min_delta existed.
+    state.setdefault('min_delta', 0.0)
+    state.setdefault('raw_best', state.get('best'))
+    return state
 
 
 def _save(directory, state):
@@ -54,17 +62,24 @@ def _collect(directory, state):
         ('status', 'valid', 'result_status', 'dev_psnr', 'dev_metrics', 'artifacts', 'logs', 'error', 'reload_succeeded')}}
     best = state.get('best')
     if result['valid']:
+        candidate = {'run_id': result['run_id'], 'dev_psnr': result['dev_psnr'], 'recipe': active['recipe']}
+        raw_best = state.get('raw_best')
+        if raw_best is None or result['dev_psnr'] > raw_best['dev_psnr']:
+            state['raw_best'] = candidate
         if best is None:
             trial['result_status'] = 'valid'
             decision = 'Baseline establishes the initial DEV score.'
-        elif result['dev_psnr'] > best['dev_psnr']:
+        elif result['dev_psnr'] > best['dev_psnr'] + state['min_delta']:
             trial['result_status'] = 'improved'
-            decision = f'DEV PSNR increased from {best["dev_psnr"]:.8f} to {result["dev_psnr"]:.8f}; keep this recipe.'
+            decision = (f'DEV PSNR increased from {best["dev_psnr"]:.8f} to {result["dev_psnr"]:.8f}, '
+                        f'exceeding min_delta {state["min_delta"]:.8f} dB; keep this recipe.')
         else:
             trial['result_status'] = 'no_gain'
-            decision = f'DEV PSNR {result["dev_psnr"]:.8f} did not exceed best {best["dev_psnr"]:.8f}; retain the best recipe.'
+            decision = (f'DEV PSNR {result["dev_psnr"]:.8f} did not exceed effective best '
+                        f'{best["dev_psnr"]:.8f} + min_delta {state["min_delta"]:.8f} dB; '
+                        'retain the best recipe. Any higher raw score is still recorded in raw_best.')
         if best is None or trial['result_status'] == 'improved':
-            state['best'] = {'run_id': result['run_id'], 'dev_psnr': result['dev_psnr'], 'recipe': active['recipe']}
+            state['best'] = candidate
             state['no_gain_count'] = 0
         else:
             state['no_gain_count'] += 1
@@ -92,11 +107,14 @@ def _launch(directory, state, recipe, proposal):
     return state
 
 
-def initialize_campaign(config, campaign_dir, max_trials=5, no_gain_limit=3, wait=True):
-    """Freeze data, initialization, seed, budgets; launch baseline before any proposal."""
+def initialize_campaign(config, campaign_dir, max_trials=5, no_gain_limit=3, wait=True,
+                        *, min_delta=DEFAULT_MIN_DELTA):
+    """Freeze data, initialization, seed, budgets and min_delta; launch baseline."""
     for name, value in (('max_trials', max_trials), ('no_gain_limit', no_gain_limit)):
         if type(value) is not int or value < 1:
             raise ValueError(f'{name} must be a positive integer')
+    if type(min_delta) not in (int, float) or not math.isfinite(min_delta) or min_delta < 0:
+        raise ValueError('min_delta must be a finite nonnegative number in dB')
     cfg = normalize_config(config)
     cfg = {**BUDGET_DEFAULTS, **RECIPE_DEFAULTS, **cfg}
     cfg['seed'] = 1 if cfg.get('seed') is None else cfg['seed']
@@ -105,8 +123,8 @@ def initialize_campaign(config, campaign_dir, max_trials=5, no_gain_limit=3, wai
         if (directory / 'campaign.json').exists():
             raise ValueError('Campaign already exists; use status, wait or next to resume it')
         state = {'created_at': _now(), 'config': cfg, 'max_trials': max_trials,
-                 'no_gain_limit': no_gain_limit, 'no_gain_count': 0, 'status': 'ready',
-                 'stop_reason': None, 'active': None, 'best': None, 'trials': [], 'frozen': None}
+                 'no_gain_limit': no_gain_limit, 'no_gain_count': 0, 'min_delta': float(min_delta), 'status': 'ready',
+                 'stop_reason': None, 'active': None, 'best': None, 'raw_best': None, 'trials': [], 'frozen': None}
         _save(directory, state)
         _launch(directory, state, recipe, {'hypothesis': 'Establish the fixed-budget baseline.', 'based_on': None})
     return wait_campaign(campaign_dir) if wait else state
@@ -140,10 +158,14 @@ def next_proposal(campaign_dir):
               '(original|mse|l1), optimizer (adam|adamw), learning_rate, and weight_decay. '
               'Keep the model, data, initialization, seed, epochs, batch size, image sizes and validation frequency fixed. '
               'Selection uses independently reloaded mean per-image DEV PSNR. Never inspect TEST for a proposal. '
+              'best is the retained effective candidate; raw_best records the highest observed score. '
+              'An improvement must exceed best.dev_psnr + the frozen min_delta; smaller gains are no_gain. '
+              'Do not change min_delta during the campaign. '
               'Write JSON with recipe, hypothesis, and based_on={run_id,dev_psnr,observation}, then call campaign submit. '
               'Wait for the actual run and call campaign next again. Stop when proposal_allowed is false.')
     return {'proposal_allowed': allowed, 'status': state['status'], 'stop_reason': state['stop_reason'],
-            'active': state.get('active'), 'best': state['best'], 'fixed': fixed,
+            'active': state.get('active'), 'best': state['best'], 'raw_best': state['raw_best'],
+            'min_delta': state['min_delta'], 'fixed': fixed,
             'remaining_trials': max(0, state['max_trials'] - len(state['trials']) - bool(state['active'])),
             'no_gain_count': state['no_gain_count'], 'no_gain_limit': state['no_gain_limit'],
             'history': evidence, 'prompt': prompt}

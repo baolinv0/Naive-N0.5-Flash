@@ -48,13 +48,15 @@ seed: 7
 编辑 `configs/baseline.example.yaml` 填好真实 train/dev 路径后：
 
 ```bash
-python -m tm_research.cli campaign init --config configs/baseline.example.yaml --campaign-dir campaigns/pilot --max-trials 4 --no-gain-limit 3 --wait
+python -m tm_research.cli campaign init --config configs/baseline.example.yaml --campaign-dir campaigns/pilot --max-trials 4 --no-gain-limit 3 --min-delta 0.01 --wait
 python -m tm_research.cli campaign next --campaign-dir campaigns/pilot
 ```
 
 `next` 返回已有真实 dev 结果和下一轮需要回答的问题。Naive 经 ARIS-Code 读取这些结果，写入 proposal JSON，再调用 `campaign submit`。每次提交必须包含假设、所依据的结果及可执行 recipe。控制器运行、比较和记录；达到预算或连续无收益条件后停止。完整命令与 ARIS 任务见 [docs/tm_research_task.md](docs/tm_research_task.md)。
 
 本地模拟 proposer 只能证明控制器能消费结果并执行不同方案；真实 Naive 的研究行为需要 live 服务联调。
+
+`raw_best` 保存最高实测分数；`best` 仅在增幅严格超过冻结的 `min_delta` 后更新并清零无收益计数，冻结候选也使用这个有效 `best`。示例 `0.01 dB` 是工程初值，真实 pilot 前应依据同一权重在目标环境的重复 DEV 评测波动确定，并在初始化时固定，不能根据后续结果临时更改。完整的 baseline＋3 次真实提案启动与证据要求见 [ARIS pilot](docs/aris-campaign-task.md#real-naive-pilot-baseline-plus-three-proposals)。
 
 ## 封存测试
 
@@ -72,6 +74,7 @@ python -m tm_research.cli final-test --campaign-dir campaigns/pilot
 ## 验证范围与入口
 
 - [本轮 review 修复与实测记录](docs/review-fix-verification.md)
+- [二次 review 阈值修复与验证](docs/rereview-followup.md)
 - [Naive / ARIS 服务设置](docs/naive-setup.md)
 - [研究合同](docs/engineering-contract.md)
 - [上一阶段历史验证](docs/verification.md)
