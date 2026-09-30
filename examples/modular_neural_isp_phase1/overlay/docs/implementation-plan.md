@@ -1,3 +1,5 @@
+> 历史记录：本文件描述最初 baseline 阶段。当前功能、协议和范围以 [engineering-contract.md](engineering-contract.md) 和 [review-fix-verification.md](review-fix-verification.md) 为准。
+
 # Modular Neural ISP 原始方案：第一阶段跑通计划
 
 版本：v2.1，2026-09-29。范围按用户最新要求收敛。

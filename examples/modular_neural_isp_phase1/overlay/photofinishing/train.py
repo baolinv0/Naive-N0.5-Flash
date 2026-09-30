@@ -34,7 +34,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import torch
-from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Dict, Optional, List
@@ -43,7 +42,8 @@ from utils.file_utils import write_json_file, read_json_file
 from dataset import Data
 from photofinishing_model import PhotofinishingModule
 from loss_utils import PhotofinishingLoss
-from baseline_utils import image_psnr_values
+from baseline_utils import image_psnr_values, summarize_psnr, best_checkpoint_index
+from recipe_utils import make_loss, make_optimizer, loss_for_batch, effective_recipe
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from utils.constants import *
@@ -171,10 +171,11 @@ def print_line(end: Optional[bool]=False, length: Optional[int]=100):
 def training(model: PhotofinishingModule, epochs: int, lr: float, l2_reg: float, tr_device: torch.device,
              train_loader: DataLoader, val_loader: DataLoader, train: Data, global_step: List[int],
              validation_frequency: int, exp_name: str, batch_size: int, compute_loss: PhotofinishingLoss,
-             writer: tensorboard.summary.Writer, log: Dict, output_dir: str):
+             writer: tensorboard.summary.Writer, log: Dict, output_dir: str,
+             optimizer_name: str = 'adam', recipe: Optional[Dict] = None, eval_size: int = 512):
   """Performs training on the given dataloaders."""
 
-  optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=l2_reg)
+  optimizer = make_optimizer(model, optimizer_name, lr, l2_reg)
   scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr / 100)
 
   for epoch in range(epochs):
@@ -188,41 +189,12 @@ def training(model: PhotofinishingModule, epochs: int, lr: float, l2_reg: float,
         gt_images = gt_images.to(device=tr_device, non_blocking=True)
         out_images = model(in_images, training_mode=True)
 
-        gt_images_lin = model.de_gamma(gt_images, out_images['gamma_factor'])
-        gt_lin_ycbcr_images = model.rgb_to_ycbcr(gt_images_lin)[:, 1:, ...]
-        gt_lin_y_images = model.rgb_to_ycbcr(gt_images_lin)[:, 0, ...].unsqueeze(1)
-
-        loss, detailed_loss = compute_loss(
-          out_img=out_images['output'], gt_img=gt_images, lsrgb_out_img=out_images['processed_lsrgb'],
-          lsrgb_gt_img=gt_images_lin, rgb_lut_out_img=out_images['lsrgb_3d_lut'],
-          cbcr_out_img=out_images['processed_cbcr'], cbcr_lut=out_images['cbcr_lut'], pre_tm_y = out_images['y_gain'],
-          ltm_y = out_images['ltm_y'], gtm_y = out_images['gtm_y'], ltm_map = out_images['ltm_params'],
-          cbcr_gt_img=gt_lin_ycbcr_images, y_gt_img=gt_lin_y_images)
-
+        loss, detailed_loss = loss_for_batch(model, out_images, gt_images, compute_loss)
         epoch_loss += loss.item()
-
         if writer:
-          writer.add_scalar(f'Loss/train', loss.item(), global_step[0])
-          writer.add_scalar(f'L1/train', detailed_loss['l1'], global_step[0])
-          writer.add_scalar(f'VGG/train', detailed_loss['vgg'], global_step[0])
-          writer.add_scalar(f'PSNR/train', detailed_loss['psnr'], global_step[0])
-          writer.add_scalar(f'SSIM/train', detailed_loss['ssim'], global_step[0])
-          writer.add_scalar(f'DeltaE/train', detailed_loss['delta-e'], global_step[0])
-          writer.add_scalar(f'CbCr/train', detailed_loss['cbcr'], global_step[0])
-          writer.add_scalar(f'LuT smoothness/train', detailed_loss['lut-smoothness'], global_step[0])
-          writer.add_scalar(f'TM/train', detailed_loss['tm'], global_step[0])
-          writer.add_scalar(f'LTM smoothness/train', detailed_loss['ltm-smoothness'], global_step[0])
-          writer.add_scalar(f'Luma energy consistency/train', detailed_loss['luma-energy-consistency'], global_step[0])
-        pbar.set_postfix({
-          f'Batch-loss': f'{detailed_loss["total"]:.4f} - L1={detailed_loss["l1"]:.4f}, '
-                         f'PSNR={detailed_loss["psnr"]:.4f}, SSIM={detailed_loss["ssim"]:.4f}, '
-                         f'D-E={detailed_loss["delta-e"]:.4f}, '
-                         f'VGG={detailed_loss["vgg"]:.4f}, '
-                         f'CbCr={detailed_loss["cbcr"]:.4f}, '
-                         f'TM={detailed_loss["tm"]:.4f}, '
-                         f'LuT TV={detailed_loss["lut-smoothness"]:.4f}, '
-                         f'LTM TV={detailed_loss["ltm-smoothness"]:.4f}, '
-                         f'Luma energy={detailed_loss["luma-energy-consistency"]:.4f}'})
+          for key, value in detailed_loss.items():
+            writer.add_scalar(f'{key}/train', value, global_step[0])
+        pbar.set_postfix({key: f'{value:.4f}' for key, value in detailed_loss.items()})
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -234,14 +206,7 @@ def training(model: PhotofinishingModule, epochs: int, lr: float, l2_reg: float,
                           compute_loss=compute_loss, writer=writer, global_step=global_step[0])
       print_line()
 
-      logging.info(
-        f'Validation loss: {val_loss["total"]:.4f} - L1={val_loss["l1"]:.4f}, '
-        f'PSNR={val_loss["psnr"]:.4f}, SSIM={val_loss["ssim"]:.4f}, '
-        f'D-E={val_loss["delta-e"]:.4f}, VGG={val_loss["vgg"]:.4f}, CbCr={val_loss["cbcr"]:.4f}, '
-        f'TM={val_loss["tm"]:.4f}, LuT TV={val_loss["lut-smoothness"]:.4f}, '
-        f'LTM TV={val_loss["ltm-smoothness"]:.4f}, '
-        f'Luma energy={val_loss["luma-energy-consistency"]:.4f}\n'
-        )
+      logging.info('Validation: %s', val_loss)
 
       checkpoint_model_name = os.path.join(output_dir, 'checkpoints', f'{exp_name}_{epoch + 1}.pth')
       torch.save(model.state_dict(), checkpoint_model_name)
@@ -251,22 +216,15 @@ def training(model: PhotofinishingModule, epochs: int, lr: float, l2_reg: float,
       log['checkpoint_model_name'].append(checkpoint_model_name)
       log['val_psnr'].append(
         val_loss['psnr'].item() if isinstance(val_loss['psnr'], torch.Tensor) else val_loss['psnr'])
-      log.setdefault('val_mean_psnr', []).append(val_loss['mean_psnr'])
+      log.setdefault('val_mean_psnr', []).append(val_loss['mean_per_image_psnr'])
+      log.setdefault('val_num_images', []).append(val_loss['num_images'])
+      log.setdefault('val_finite', []).append(val_loss['finite'])
       write_json_file(log, os.path.join(output_dir, 'logs', f'{exp_name}'))
 
       if writer:
         writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step[0])
-        writer.add_scalar(f'Loss/val', val_loss["total"], global_step[0])
-        writer.add_scalar(f'L1/val', val_loss['l1'], global_step[0])
-        writer.add_scalar(f'SSIM/val', val_loss['ssim'], global_step[0])
-        writer.add_scalar(f'VGG/val', val_loss['vgg'], global_step[0])
-        writer.add_scalar(f'PSNR/val', val_loss['psnr'], global_step[0])
-        writer.add_scalar(f'DeltaE/val', val_loss['delta-e'], global_step[0])
-        writer.add_scalar(f'LuT smoothness/val', val_loss['lut-smoothness'], global_step[0])
-        writer.add_scalar(f'CbCr/val', val_loss['cbcr'], global_step[0])
-        writer.add_scalar(f'TM/val', val_loss['tm'], global_step[0])
-        writer.add_scalar(f'LTM smoothness/val', val_loss['ltm-smoothness'], global_step[0])
-        writer.add_scalar(f'Luma energy consistency/val', val_loss['luma-energy-consistency'], global_step[0])
+        for key, value in val_loss.items():
+          writer.add_scalar(f'{key}/val', value, global_step[0])
         writer.add_images('Input images/train', images, global_step[0])
         writer.add_images('Output images/train', out_images['output'], global_step[0])
         writer.add_images('GT images/train', gt_images, global_step[0])
@@ -275,12 +233,15 @@ def training(model: PhotofinishingModule, epochs: int, lr: float, l2_reg: float,
 
   torch.save(model.state_dict(), os.path.join(output_dir, 'models', f'{exp_name}.pth'))
   logging.info('Saved trained model!')
-  best_model_idx = log['val_psnr'].index(max(log['val_psnr']))
+  best_model_idx = best_checkpoint_index(log['val_mean_psnr'])
   best_model_name = log['checkpoint_model_name'][best_model_idx]
   best_checkpoint = os.path.abspath(os.path.join(output_dir, 'models', f'{exp_name}-best.pth'))
   shutil.copy(best_model_name, best_checkpoint)
-  write_json_file({'mean_psnr': log['val_mean_psnr'][best_model_idx],
-                   'original_batch_psnr': log['val_psnr'][best_model_idx],
+  write_json_file({'mean_per_image_psnr': log['val_mean_psnr'][best_model_idx],
+                   'mean_psnr': log['val_mean_psnr'][best_model_idx],
+                   'num_images': log['val_num_images'][best_model_idx],
+                   'finite': log['val_finite'][best_model_idx],
+                   'protocol': f'P{eval_size}', 'eval_size': eval_size, 'recipe': recipe,
                    'best_checkpoint': best_checkpoint,
                    'config_dir': os.path.abspath(os.path.join(output_dir, 'config'))},
                   os.path.join(output_dir, 'metrics.json'))
@@ -292,14 +253,15 @@ def train_net(model: PhotofinishingModule, tr_device: torch.device, in_tr_dir: s
               l1_loss_weight: float, ssim_loss_weight: float, delta_e_loss_weight: float, perceptual_loss_weight: float,
               luma_energy_consistency_loss_weight: float, ltm_smoothness_loss_weight: float, tm_loss_weight: float,
               cbcr_loss_weight: float, lut_smoothness_loss_weight: float, no_tensorboard: bool, extract_patches: bool,
-              output_dir: str, num_workers: int):
+              output_dir: str, num_workers: int, loss_family: str = 'original',
+              optimizer_name: str = 'adam', eval_size: int = 512, recipe: Optional[Dict] = None):
   """Trains photofinishing networks."""
 
   print_line()
   print(f'Training on {in_sz}x{in_sz} images ...')
   print_line(end=True)
 
-  compute_loss = PhotofinishingLoss(l1_weight=l1_loss_weight, ssim_weight=ssim_loss_weight,
+  compute_loss = make_loss(loss_family, l1_weight=l1_loss_weight, ssim_weight=ssim_loss_weight,
                                     delta_e_weight=delta_e_loss_weight, vgg_weight=perceptual_loss_weight,
                                     cbcr_weight=cbcr_loss_weight, lut_smooth_weight=lut_smoothness_loss_weight,
                                     luma_energy_weight=luma_energy_consistency_loss_weight,
@@ -313,20 +275,21 @@ def train_net(model: PhotofinishingModule, tr_device: torch.device, in_tr_dir: s
                temp_folder=temp_folder, overwrite_temp_folder=overwrite_temp_folder, batch_size=batch_size,
                image_size=in_sz, shuffle=True, geometric_aug=True, extract_patches=extract_patches)
   val = Data(in_img_dir=in_val_dir, gt_img_dir=gt_val_dir,
-             data_dir=data_val_dir if data_val_dir is None else data_val_dir, image_size=in_sz,
+             data_dir=data_val_dir, image_size=eval_size,
              temp_folder=temp_folder, overwrite_temp_folder=overwrite_temp_folder, geometric_aug=False,
-             batch_size=batch_size, shuffle=True, extract_patches=extract_patches)
+             batch_size=batch_size, shuffle=False, extract_patches=False)
   train_loader = DataLoader(train, batch_size=1, num_workers=num_workers, pin_memory=True, persistent_workers=False,
                             shuffle=True)
-  val_loader = DataLoader(val, batch_size=1, num_workers=num_workers, pin_memory=True, drop_last=True,
-                          persistent_workers=False, shuffle=True)
+  val_loader = DataLoader(val, batch_size=1, num_workers=num_workers, pin_memory=True,
+                          persistent_workers=False, shuffle=False)
 
   log = {'checkpoint_model_name': [], 'val_psnr': []}
 
   training(model=model, epochs=epochs, lr=lr, l2_reg=l2_reg, tr_device=tr_device,
            train_loader=train_loader, val_loader=val_loader, train=train, global_step=global_step,
            validation_frequency=validation_frequency, exp_name=exp_name, batch_size=batch_size,
-           compute_loss=compute_loss, writer=writer, log=log, output_dir=output_dir)
+           compute_loss=compute_loss, writer=writer, log=log, output_dir=output_dir,
+           optimizer_name=optimizer_name, recipe=recipe, eval_size=eval_size)
 
   if writer:
     writer.close()
@@ -334,18 +297,11 @@ def train_net(model: PhotofinishingModule, tr_device: torch.device, in_tr_dir: s
 
   if delete_temp_folder:
     logging.info('Deleting temp folders')
-    if extract_patches:
-      postfix = '_patches'
-    else:
-      postfix = ''
-    tr_temp_dir = os.path.join(os.path.dirname(gt_tr_dir),
-                               f'{temp_folder}_{os.path.basename(gt_tr_dir)}_bs_{batch_size}_sz_{in_sz}{postfix}')
-
-    val_temp_dir = os.path.join(os.path.dirname(gt_val_dir),
-                                f'{temp_folder}_{os.path.basename(gt_val_dir)}_bs_{batch_size}_sz_{in_sz}{postfix}')
-    shutil.rmtree(tr_temp_dir)
-    if tr_temp_dir != val_temp_dir:
-      shutil.rmtree(val_temp_dir)
+    for dataset in (train, val):
+      for handle in dataset._h5_cache.values():
+        handle.close()
+    for temp_dir in {train._temp_dir, val._temp_dir}:
+      shutil.rmtree(temp_dir)
     logging.info('Done!')
 
 
@@ -355,9 +311,7 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
   """Network validation."""
   model.eval()
 
-  val_loss = {'total': 0.0, 'l1': 0.0, 'ssim': 0.0, 'delta-e': 0.0, 'psnr': 0.0, 'cbcr': 0.0,
-              'lut-smoothness': 0.0, 'luma-energy-consistency': 0.0, 'ltm-smoothness': 0.0,
-              'tm': 0.0, 'vgg': 0.0}
+  val_loss = {}
   image_psnr = []
   batch_count = 0
 
@@ -369,19 +323,10 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
       gt_images = gt_images.to(device=val_device, non_blocking=True)
       out_images = model(in_images, training_mode=True)
 
-      gt_images_lin = model.de_gamma(gt_images, out_images['gamma_factor'])
-      gt_lin_ycbcr_images = model.rgb_to_ycbcr(gt_images_lin)[:, 1:, ...]
-      gt_lin_y_images = model.rgb_to_ycbcr(gt_images_lin)[:, 0, ...].unsqueeze(1)
-
-      _, detailed_b_loss= compute_loss(
-        out_img=out_images['output'], gt_img=gt_images, lsrgb_out_img=out_images['processed_lsrgb'],
-        lsrgb_gt_img=gt_images_lin, rgb_lut_out_img=out_images['lsrgb_3d_lut'],
-        cbcr_out_img=out_images['processed_cbcr'], cbcr_gt_img=gt_lin_ycbcr_images, y_gt_img=gt_lin_y_images,
-        cbcr_lut=out_images['cbcr_lut'], pre_tm_y=out_images['y_gain'], ltm_y=out_images['ltm_y'],
-        gtm_y=out_images['gtm_y'], ltm_map=out_images['ltm_params'])
-
-      for key in val_loss:
-        val_loss[key] += detailed_b_loss[key]
+      _, detailed_b_loss = loss_for_batch(model, out_images, gt_images, compute_loss)
+      for key, value in detailed_b_loss.items():
+        if key != 'psnr':
+          val_loss[key] = val_loss.get(key, 0.0) + value
       image_psnr.extend(image_psnr_values(out_images['output'], gt_images))
       batch_count += 1
 
@@ -403,7 +348,10 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
 
   for key in val_loss:
     val_loss[key] /= batch_count
-  val_loss['mean_psnr'] = float(np.mean(image_psnr))
+  val_loss.update(summarize_psnr(image_psnr))
+  if not val_loss['finite']:
+    raise ValueError('Validation produced non-finite per-image PSNR')
+  val_loss['psnr'] = val_loss['mean_psnr']
   model.train()
   return val_loss
 
@@ -431,12 +379,16 @@ def get_args():
   parser.add_argument('--epochs', type=int, default=600, dest='epochs')
   parser.add_argument('--batch-size', type=int, default=8, dest='batch_size')
   parser.add_argument('--learning-rate', type=float, default=0.0001, dest='lr')
-  parser.add_argument('--l2reg', type=float, default=0.0000001, help='L2 Regularization factor',
+  parser.add_argument('--loss-family', choices=('original', 'mse', 'l1'), default='original')
+  parser.add_argument('--optimizer', choices=('adam', 'adamw'), default='adam')
+  parser.add_argument('--l2reg', '--weight-decay', type=float, default=0.0000001, help='L2 Regularization factor',
                       dest='l2_r')
   parser.add_argument( '--load', dest='load', type=str, default=None, help='Load model from a .pth file')
   parser.add_argument('--validation-frequency', dest='val_frq', type=int, default=4)
   parser.add_argument('--in-size', dest='in_sz', type=int,
                       default=PHOTOFINISHING_TRAINING_INPUT_SIZE, help='Size of training images.')
+  parser.add_argument('--eval-size', type=int, default=512,
+                      help='Square validation size; P512 is the standard protocol.')
   parser.add_argument('--temp-folder', dest='temp_folder', type=str, default='ps_temp_h5',
                       help='Name of temporary folder to save training images.')
   parser.add_argument('--overwrite-temp-folder', dest='overwrite_temp_folder', action='store_true',
@@ -478,6 +430,7 @@ if __name__ == '__main__':
   logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
   args = get_args()
   assert args.in_sz >= 256, 'Expected input size >= 256.'
+  assert args.eval_size >= 256, 'Expected evaluation size >= 256.'
   if args.epochs < 1 or args.val_frq < 1:
     raise ValueError('Epochs and validation frequency must be positive.')
   if args.seed is not None:
@@ -489,7 +442,7 @@ if __name__ == '__main__':
       torch.cuda.manual_seed_all(args.seed)
   output_dir = os.path.abspath(args.output_dir)
   print(tabulate([(key, value) for key, value in vars(args).items()], headers=['Argument', 'Value'], tablefmt='grid'))
-  if args.l1_loss_weight + args.ssim_loss_weight == 0:
+  if args.loss_family == 'original' and args.l1_loss_weight + args.ssim_loss_weight == 0:
     raise ValueError(f'At least the weight(s) of one of the following loses should be > 0: [l1, ssim].')
 
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -521,7 +474,8 @@ if __name__ == '__main__':
     logging.info(f'Model loaded from {args.load}')
   else:
     net = PhotofinishingModule(device=device, use_3d_lut=args.use_3d_lut)
-  config = {'use_3d_lut': args.use_3d_lut}
+  recipe = effective_recipe(args)
+  config = {'use_3d_lut': args.use_3d_lut, 'recipe': recipe}
 
   write_json_file(config, os.path.join(output_dir, 'config', f'{model_name}.json'))
   write_json_file(config, os.path.join(output_dir, 'config', f'{model_name}-best.json'))
@@ -562,6 +516,10 @@ if __name__ == '__main__':
       extract_patches=args.extract_patches,
       output_dir=output_dir,
       num_workers=args.num_workers,
+      loss_family=args.loss_family,
+      optimizer_name=args.optimizer,
+      eval_size=args.eval_size,
+      recipe=recipe,
     )
   except KeyboardInterrupt:
     torch.save(net.state_dict(), os.path.join(output_dir, 'checkpoints', 'interrupted_checkpoint.pth'))

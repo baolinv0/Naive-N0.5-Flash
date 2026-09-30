@@ -49,6 +49,7 @@ def main():
         "runs_dir": str(root / "runs"), **sections,
         "epochs": 2, "batch_size": 1, "in_size": args.size,
         "validation_frequency": 1, "num_workers": 0, "seed": 7,
+        "eval_size": args.size,
         "init_checkpoint": str(repo / "photofinishing/models/photofinishing_s24-style-0.pth"),
         "init_config_dir": str(repo / "photofinishing/config"),
     }

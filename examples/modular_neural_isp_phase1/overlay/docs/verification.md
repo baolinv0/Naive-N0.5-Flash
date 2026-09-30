@@ -1,3 +1,5 @@
+> 历史记录：本文件描述最初 baseline 阶段。当前功能、协议和范围以 [engineering-contract.md](engineering-contract.md) 和 [review-fix-verification.md](review-fix-verification.md) 为准。
+
 # 实施与验证记录
 
 验证日期：2026-09-29。基础源码：SamsungLabs/modular_neural_isp 当日公开源码。执行环境：Linux、Python 3.11、CPU、PyTorch 2.5.1+cpu、torchvision 0.20.1+cpu。

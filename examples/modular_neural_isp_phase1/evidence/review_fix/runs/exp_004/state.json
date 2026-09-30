@@ -1,0 +1,122 @@
+{
+  "run_id": "exp_004",
+  "status": "completed",
+  "result_status": "valid",
+  "valid": true,
+  "reload_succeeded": true,
+  "created_at": "2026-09-29T13:02:03.086384+00:00",
+  "run_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004",
+  "recipe": {
+    "loss_family": "original",
+    "optimizer": "adam",
+    "learning_rate": 0.0002,
+    "weight_decay": 1e-07
+  },
+  "logs": {
+    "worker": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/worker.log",
+    "train": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train.log",
+    "dev": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev.log"
+  },
+  "started_at": "2026-09-29T13:02:03.223047+00:00",
+  "worker_pid": 7,
+  "train_metrics": {
+    "mean_per_image_psnr": 24.8013607872114,
+    "mean_psnr": 24.8013607872114,
+    "num_images": 1,
+    "finite": true,
+    "protocol": "P256",
+    "eval_size": 256,
+    "recipe": {
+      "loss_family": "original",
+      "optimizer": "adam",
+      "learning_rate": 0.0002,
+      "weight_decay": 1e-07,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "loss_weights": {
+        "l1": 2.5,
+        "ssim": 0.5,
+        "delta_e": 0.02,
+        "perceptual": 0.01,
+        "cbcr": 1.0,
+        "lut_smoothness": 0.06,
+        "tm": 0.5,
+        "ltm_smoothness": 0.6,
+        "luma_energy_consistency": 0.2
+      },
+      "scheduler": {
+        "name": "CosineAnnealingLR",
+        "T_max": 1,
+        "eta_min": 2e-06
+      },
+      "epochs": 1,
+      "batch_size": 1,
+      "in_size": 256,
+      "eval_size": 256,
+      "seed": 7,
+      "extract_patches": false,
+      "validation_frequency": 1,
+      "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+    },
+    "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/models/photofinishing_exp_004-best.pth",
+    "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/config"
+  },
+  "expected_count": 1,
+  "finished_at": "2026-09-29T13:02:55.236751+00:00",
+  "dev_psnr": 24.8013607872114,
+  "dev_metrics": {
+    "mean_per_image_psnr": 24.8013607872114,
+    "mean_psnr": 24.8013607872114,
+    "num_images": 1,
+    "finite": true,
+    "mean_ssim": 0.9662439823150635,
+    "protocol": "P256",
+    "eval_size": 256,
+    "recipe": {
+      "loss_family": "original",
+      "optimizer": "adam",
+      "learning_rate": 0.0002,
+      "weight_decay": 1e-07,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "loss_weights": {
+        "l1": 2.5,
+        "ssim": 0.5,
+        "delta_e": 0.02,
+        "perceptual": 0.01,
+        "cbcr": 1.0,
+        "lut_smoothness": 0.06,
+        "tm": 0.5,
+        "ltm_smoothness": 0.6,
+        "luma_energy_consistency": 0.2
+      },
+      "scheduler": {
+        "name": "CosineAnnealingLR",
+        "T_max": 1,
+        "eta_min": 2e-06
+      },
+      "epochs": 1,
+      "batch_size": 1,
+      "in_size": 256,
+      "eval_size": 256,
+      "seed": 7,
+      "extract_patches": false,
+      "validation_frequency": 1,
+      "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+    },
+    "mean_time_seconds": 3.158632516860962,
+    "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/per_image.csv",
+    "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/images"
+  },
+  "artifacts": {
+    "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/models/photofinishing_exp_004-best.pth",
+    "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/config",
+    "train_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/metrics.json",
+    "dev_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/metrics.json",
+    "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/per_image.csv"
+  }
+}

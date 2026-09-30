@@ -1,0 +1,2 @@
+image,psnr,ssim,time_seconds,output_image
+synthetic_test_000.png,24.80138451317119,0.9662439823150635,3.824442148208618,/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test/images/synthetic_test_000.png

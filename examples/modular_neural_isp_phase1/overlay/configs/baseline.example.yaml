@@ -1,6 +1,5 @@
 # Relative paths are resolved from this YAML file's directory.
 repo_dir: ..
-# Uses the active environment. An absolute Python executable also works.
 python: python
 runs_dir: ../runs
 train:
@@ -8,20 +7,31 @@ train:
   gt_dir: /path/to/train/gt
   metadata_dir: /path/to/train/data
 validation:
-  input_dir: /path/to/validation/input
-  gt_dir: /path/to/validation/gt
-  metadata_dir: /path/to/validation/data
+  input_dir: /path/to/dev/input
+  gt_dir: /path/to/dev/gt
+  metadata_dir: /path/to/dev/data
+  # Optional assertion, checked against actual PNG inputs and reload count:
+  # expected_count: 100
+# TEST is never used by ordinary runs or campaign proposals.
+# Only `final-test --campaign-dir ...`, after campaign finalize, reads this split.
 test:
   input_dir: /path/to/test/input
   gt_dir: /path/to/test/gt
   metadata_dir: /path/to/test/data
-# Omit these knobs to retain upstream train.py defaults (600 epochs,
-# batch size 8, 512 input size, validation every 4 epochs, 12 workers).
-# epochs: 2
-# batch_size: 8
-# in_size: 512
-# validation_frequency: 4
-# num_workers: 12
+# Original recipe defaults. These four controls are the only campaign overrides.
+loss_family: original  # original | mse | l1
+optimizer: adam        # adam | adamw
+learning_rate: 0.0001
+weight_decay: 0.0000001
+# Fixed across a campaign. Set a practical budget before starting.
+epochs: 600
+batch_size: 8
+in_size: 512
+eval_size: 512         # P512 evaluation; a smoke run can explicitly use e.g. 256.
+validation_frequency: 4
+num_workers: 12
+seed: 1
+# All trials restart from this same checkpoint, if supplied.
+# Without one, the same seed recreates the initial model weights.
 # init_checkpoint: /path/to/model.pth
 # init_config_dir: /path/to/config
-# seed: 1

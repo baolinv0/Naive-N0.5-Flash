@@ -1,0 +1,28 @@
+{
+  "epochs": 1,
+  "batch_size": 1,
+  "in_size": 256,
+  "eval_size": 256,
+  "validation_frequency": 1,
+  "num_workers": 0,
+  "loss_family": "original",
+  "optimizer": "adam",
+  "learning_rate": 0.0002,
+  "weight_decay": 1e-07,
+  "repo_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp",
+  "python": "/workspace/scratch/4578f81f7dfe/isp-venv/bin/python",
+  "runs_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs",
+  "seed": 7,
+  "init_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth",
+  "init_config_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/config",
+  "train": {
+    "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/denoised_raw_images",
+    "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/srgb_images_style_0",
+    "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/data"
+  },
+  "validation": {
+    "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/denoised_raw_images",
+    "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/srgb_images_style_0",
+    "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/data"
+  }
+}

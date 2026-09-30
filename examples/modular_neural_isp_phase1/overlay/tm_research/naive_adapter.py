@@ -5,8 +5,10 @@ The protocol helpers and injected-generator server need only the standard librar
 """
 
 import argparse
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 from queue import Empty, Queue
 import re
 from threading import Thread
@@ -14,8 +16,16 @@ import time
 from uuid import uuid4
 
 
-TOOL_CALL = re.compile(r"<tool_call>\s*<function=([^>]+)>\s*(.*?)\s*</function>\s*</tool_call>", re.S)
+TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
+FUNCTION = re.compile(r"\s*<function=([^>]+)>\s*(.*?)\s*</function>\s*", re.S)
 PARAMETER = re.compile(r"<parameter=([^>]+)>(.*?)</parameter>", re.S)
+
+
+@dataclass(frozen=True)
+class GenerationResult:
+    text: str
+    finish_reason: str
+    starts_in_think: bool = False
 
 
 def prepare_messages(messages):
@@ -41,32 +51,95 @@ def prepare_messages(messages):
     return prepared
 
 
-def parse_assistant_text(raw, tools=()):
+def _validate(value, schema, path):
+    """Validate the declared JSON types and required fields used by tool schemas."""
+    kinds = schema.get("type", [])
+    if isinstance(kinds, str):
+        kinds = [kinds]
+    matches = {
+        "object": isinstance(value, dict), "array": isinstance(value, list),
+        "string": isinstance(value, str), "boolean": isinstance(value, bool),
+        "integer": isinstance(value, int) and not isinstance(value, bool),
+        "number": isinstance(value, (int, float)) and not isinstance(value, bool)
+                  and (not isinstance(value, float) or math.isfinite(value)),
+        "null": value is None,
+    }
+    if kinds and not any(matches.get(kind, False) for kind in kinds):
+        raise ValueError(f"{path} must have type {' or '.join(kinds)}")
+    if isinstance(value, dict):
+        missing = set(schema.get("required", ())) - value.keys()
+        if missing:
+            raise ValueError(f"{path} missing required fields: {', '.join(sorted(missing))}")
+        properties = schema.get("properties", {})
+        for key, item in value.items():
+            if key in properties:
+                _validate(item, properties[key], f"{path}.{key}")
+            elif schema.get("additionalProperties") is False:
+                raise ValueError(f"{path} has undeclared field: {key}")
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            _validate(item, schema["items"], f"{path}[{index}]")
+
+
+def parse_assistant_text(raw, tools=(), *, starts_in_think=False, allow_tool_calls=True):
     """Return visible text and (name, argument mapping) pairs from a Naive reply."""
+    if starts_in_think:
+        raw = "<think>" + raw
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S)
     if "</think>" in raw:
         raw = raw.split("</think>", 1)[1]
+    # An unfinished reasoning span can contain apparent tool calls as private text.
+    raw = raw.split("<think>", 1)[0]
     raw = raw.replace("<|im_end|>", "").replace("<|endoftext|>", "")
-    properties = {
-        tool["function"]["name"]: tool["function"].get("parameters", {}).get("properties", {})
+    schemas = {
+        tool["function"]["name"]: tool["function"].get("parameters", {})
         for tool in tools or () if "function" in tool
     }
     calls = []
     for match in TOOL_CALL.finditer(raw):
-        name = match.group(1).strip()
+        if not allow_tool_calls:
+            continue
+        function = FUNCTION.fullmatch(match.group(1))
+        if function is None:
+            raise ValueError("malformed tool function block")
+        name = function.group(1).strip()
+        if name not in schemas:
+            raise ValueError(f"undeclared tool: {name}")
+        schema = schemas[name]
+        body = function.group(2)
         arguments = {}
-        for parameter in PARAMETER.finditer(match.group(2)):
+        position = 0
+        for parameter in PARAMETER.finditer(body):
+            if body[position:parameter.start()].strip():
+                raise ValueError(f"malformed parameters for {name}")
             key, value = parameter.group(1).strip(), parameter.group(2)
-            kind = properties.get(name, {}).get(key, {}).get("type")
-            if kind in ("object", "array", "integer", "number", "boolean"):
-                value = json.loads(value)
+            if key in arguments:
+                raise ValueError(f"duplicate parameter: {name}.{key}")
+            kind = schema.get("properties", {}).get(key, {}).get("type")
+            if kind and kind != "string":
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    if not isinstance(kind, list) or "string" not in kind:
+                        raise ValueError(f"invalid JSON for {name}.{key}") from None
             arguments[key] = value
+            position = parameter.end()
+        if body[position:].strip():
+            raise ValueError(f"malformed parameters for {name}")
+        _validate(arguments, schema, name)
         calls.append((name, arguments))
-    return TOOL_CALL.sub("", raw).strip(), calls
+    content = TOOL_CALL.sub("", raw)
+    # Drop a trailing unfinished tool block, including a partially generated tag.
+    content = content.split("<tool_call", 1)[0]
+    for length in range(1, len("<tool_call")):
+        if content.endswith("<tool_call"[:length]):
+            content = content[:-length]
+            break
+    return content.strip(), calls
 
 
 def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_interval=10):
-    """Build an HTTP server; generate(request) yields raw decoded model fragments."""
+    """Build a server; generate yields text fragments or a final GenerationResult."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -116,6 +189,8 @@ def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_i
 
             Thread(target=produce, daemon=True).start()
             raw_parts = []
+            finish_reason = "stop"
+            starts_in_think = False
             while True:
                 try:
                     piece = pieces.get(timeout=heartbeat_interval)
@@ -129,16 +204,29 @@ def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_i
                     self.wfile.write(b"data: " + json.dumps({"error": {"message": str(piece)}}).encode() + b"\n\n")
                     self.wfile.flush()
                     return
-                raw_parts.append(piece)
+                if isinstance(piece, GenerationResult):
+                    raw_parts.append(piece.text)
+                    finish_reason = piece.finish_reason
+                    starts_in_think = piece.starts_in_think
+                else:
+                    raw_parts.append(piece)
             # Parse the complete reply before content deltas so tool XML is not shown.
-            content, calls = parse_assistant_text("".join(raw_parts), request.get("tools", []))
+            try:
+                content, calls = parse_assistant_text(
+                    "".join(raw_parts), request.get("tools", []),
+                    starts_in_think=starts_in_think, allow_tool_calls=finish_reason != "length",
+                )
+            except ValueError as error:
+                self.wfile.write(b"data: " + json.dumps({"error": {"message": str(error)}}).encode() + b"\n\n")
+                self.wfile.flush()
+                return
             if content:
                 send({"content": content})
             for index, (name, arguments) in enumerate(calls):
                 send({"tool_calls": [{"index": index, "id": "call_" + uuid4().hex,
                                       "type": "function", "function": {"name": name,
                                       "arguments": json.dumps(arguments, ensure_ascii=False)}}]})
-            send({}, "tool_calls" if calls else "stop")
+            send({}, "tool_calls" if calls else finish_reason)
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
@@ -166,8 +254,20 @@ def transformers_generator(model_id):
         else:
             generation.update(do_sample=True, temperature=temperature, top_p=request.get("top_p", 0.95))
         output = model.generate(**inputs, **generation)
+        generated_ids = output[0, inputs["input_ids"].shape[1]:]
+        eos_ids = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+        if eos_ids is None:
+            eos_ids = getattr(tokenizer, "eos_token_id", None)
+        if not isinstance(eos_ids, (list, tuple)):
+            eos_ids = [eos_ids]
+        ended_on_eos = len(generated_ids) > 0 and int(generated_ids[-1]) in eos_ids
+        finish_reason = "length" if len(generated_ids) >= generation["max_new_tokens"] and not ended_on_eos else "stop"
+        prompt = tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=False)
+        prompt = prompt.rsplit("<|im_start|>assistant", 1)[-1]
+        starts_in_think = prompt.rfind("<think>") > prompt.rfind("</think>")
         # Preserve Naive's end token until parsing, rather than stripping it early.
-        yield tokenizer.decode(output[0, inputs["input_ids"].shape[1]:], skip_special_tokens=False)
+        yield GenerationResult(tokenizer.decode(generated_ids, skip_special_tokens=False),
+                               finish_reason, starts_in_think)
 
     return generate
 

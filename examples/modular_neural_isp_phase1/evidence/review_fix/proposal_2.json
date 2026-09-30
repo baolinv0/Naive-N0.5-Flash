@@ -1,0 +1,11 @@
+{
+  "recipe": {
+    "loss_family": "l1"
+  },
+  "hypothesis": "Pure MSE fell 0.40704 dB below the original recipe at the same budget. Compare pure L1 with the same optimizer and rate to test whether the pixel-loss gradient weighting explains this fixture behavior. Engineering proposal by the assistant, not Naive.",
+  "based_on": {
+    "run_id": "exp_002",
+    "dev_psnr": 22.267426134535206,
+    "observation": "MSE was valid but no_gain; original remains best at 22.67446859 dB. No general claim follows from a one-epoch synthetic fixture."
+  }
+}

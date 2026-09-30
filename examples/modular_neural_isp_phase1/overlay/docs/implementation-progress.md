@@ -1,3 +1,5 @@
+> 历史记录：本文件描述最初 baseline 阶段。当前功能、协议和范围以 [engineering-contract.md](engineering-contract.md) 和 [review-fix-verification.md](review-fix-verification.md) 为准。
+
 # Phase 1 implementation progress
 - Official repository checked out on codex/original-pipeline.
 - Approved scope: original photofinishing baseline plus ARIS/Naive invocation.

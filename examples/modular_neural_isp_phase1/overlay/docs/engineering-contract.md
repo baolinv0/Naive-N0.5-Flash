@@ -1,18 +1,25 @@
-# Shared implementation contract
+# Current implementation contract
 
-Goal: original Samsung photofinishing baseline only. Keep architecture, loss weights, optimizer, schedules, augmentation, and official input preprocessing. No teacher/style transfer/new losses/search. User requires function-first, no security framework, no content fingerprints/revision strings in added files, no extreme-case test matrix, no mechanical reviewer scores.
+This review follow-up adds controlled training-recipe research to the original ISP baseline. It supersedes the earlier baseline-only implementation contract; the earlier phase remains documented in verification.md.
 
-Work root: /workspace/scratch/4578f81f7dfe/modular_neural_isp
-Python: /workspace/scratch/4578f81f7dfe/isp-venv/bin/python (dependencies being installed by root).
-Agent A owns photofinishing/{train,test,dataset}.py and new photofinishing/baseline_utils.py; tests/test_isp_baseline.py. Do not change model/loss recipe. It may fix loss initialization only if needed without changing active recipe.
-Agent B owns tm_research/naive_adapter.py, tests/test_naive_adapter.py, configs/aris.example.json, docs/naive-setup.md. No __init__ edits.
-Agent C owns tm_research/{__init__,runner,cli}.py, tests/test_runner.py, configs/baseline.example.yaml, docs/tm_research_task.md. No __init__ changes by others.
-Root owns README_PHASE1.md, scripts, packaging, pyproject/pytest configuration, dependencies and integration verification.
+## Fixed
 
-A adds train --output-dir ROOT (default original directory), --num-workers (default upstream 12), --seed optional, --load-config-dir optional for checkpoint configs. ORIGINAL algorithm defaults remain untouched. Output root contains models/photofinishing_<exp-name>-best.pth and config/same-stem.json, checkpoints/, logs/, metrics.json (mean_psnr for image-wise, original_batch_psnr, best_checkpoint, config_dir; paths absolute). Always validate final epoch so tiny run works. Original best model criterion can stay legacy corrected mean-batch metric, explicitly named. Expose seed only optional. Do not implement new optimization.
-A test adds --result-dir existing output: also metrics.json and per_image.csv and output images. Preserve quarter resize default and --no-ds.
-C calls existing photofinishing/train.py with --output-dir <run>/train, then photofinishing/test.py with trained model and config-dir <run>/train/config and result-dir <run>/test. A must confirm exact telemetry fields to C.
-C config: repo_dir, python, runs_dir, train:{input_dir,gt_dir,metadata_dir}, validation:same, test:same(optional), epochs(optional original600), batch_size(optional original8), in_size(optional original512), validation_frequency, num_workers, init_checkpoint(optional), init_config_dir(optional), seed(optional). Pass only specified training hyperparameters. runs/results.jsonl or csv and run state files. Function run_baseline(config)->run_id (start background worker), get_result(run_id,runs_dir=...) returns dict. CLI baseline --config / status --run --runs-dir / wait / report / commands(dry command display). Explicit failures + saved logs; no custom scheduler or sandbox. No checkpoint resume unless A implements it; report restart semantics honestly.
-B optional local adapter: official Naive template -> OpenAI-compatible streamed /v1/chat/completions, tools and tool result history. Lazy transformers imports (so protocol tests require no weights). Can use stdlib HTTP server. Existing compatible service can be configured directly. Parser needs normal calls, multiline args, plain reply; avoid elaborate security cases. Do not pretend fixture roundtrip is real Naive.
+Official photofinishing model structure, RAW/metadata color preprocessing, datasets, initialization, seed, training budget, augmentation and evaluation protocol remain fixed within one campaign. No historical user enhancement, style-transfer teacher, or model-code search is included.
 
-Tests: small meaningful tests for pairing, PSNR aggregation, HDF5 reread; real process runner using tiny script fixture; normal streamed tool loop via injected generator. Root will attempt official weight CPU forward and short original training on clearly-labeled synthetic data. No real GPU/data/service is currently configured.
+## Adjustable
+
+Only loss_family (original/mse/l1), optimizer (adam/adamw), learning_rate and weight_decay may change. Original defaults remain available. Every run stores its effective configuration.
+
+## Metric and execution
+
+PSNR is the mean of per-image RGB PSNR, float64 reduction, range [0,1], minimum MSE 1e-12. The same definition selects best checkpoints, evaluates dev, and compares trials. P512 is the default; smaller engineering fixtures explicitly use P<size>. Legacy quarter/native results have separate protocol names.
+
+Ordinary trials train, reload the selected checkpoint in another process and evaluate dev. Missing/unloadable checkpoint, nonfinite score or incorrect sample count is not a comparable result. Completed execution is distinct from a valid experiment and from a PSNR improvement. The current evaluator shares fixed repository code; it is not a separately isolated evaluation service. Model/code search is outside this contract.
+
+## Research loop
+
+ARIS-Code uses the task-specific campaign CLI to read actual dev evidence, write a hypothesis and recipe with a referenced parent result, run one experiment, and repeat. The controller persists evidence, compares scores and stops at the configured trial/stagnation limit. Trials run serially. Finalize freezes the selected recipe; final-test is separate and never feeds the search prompt.
+
+The first implementation restarts failed trials; it does not promise optimizer/RNG resume or multi-GPU scheduling. Multi-seed confirmation and TM-only attribution are follow-up stages. Synthetic fixtures and simulated proposers must be labeled; neither establishes real-camera gains or live Naive research ability.
+
+Functionality comes first: only checks that directly affect runnable experiments or comparable scores. No content fingerprint system, extreme-case matrix, or mechanical review score.

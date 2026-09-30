@@ -1,0 +1,465 @@
+{
+  "created_at": "2026-09-29T12:57:17.536987+00:00",
+  "config": {
+    "epochs": 1,
+    "batch_size": 1,
+    "in_size": 256,
+    "eval_size": 256,
+    "validation_frequency": 1,
+    "num_workers": 0,
+    "loss_family": "original",
+    "optimizer": "adam",
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-07,
+    "repo_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp",
+    "python": "/workspace/scratch/4578f81f7dfe/isp-venv/bin/python",
+    "runs_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs",
+    "seed": 7,
+    "init_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth",
+    "init_config_dir": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/config",
+    "train": {
+      "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/denoised_raw_images",
+      "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/srgb_images_style_0",
+      "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/train/data"
+    },
+    "validation": {
+      "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/denoised_raw_images",
+      "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/srgb_images_style_0",
+      "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/validation/data"
+    },
+    "test": {
+      "input_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/denoised_raw_images",
+      "gt_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/srgb_images_style_0",
+      "metadata_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/data"
+    }
+  },
+  "max_trials": 4,
+  "no_gain_limit": 3,
+  "no_gain_count": 0,
+  "status": "finalized",
+  "stop_reason": "max_trials",
+  "active": null,
+  "best": {
+    "run_id": "exp_004",
+    "dev_psnr": 24.8013607872114,
+    "recipe": {
+      "loss_family": "original",
+      "optimizer": "adam",
+      "learning_rate": 0.0002,
+      "weight_decay": 1e-07
+    }
+  },
+  "trials": [
+    {
+      "index": 0,
+      "run_id": "exp_001",
+      "recipe": {
+        "loss_family": "original",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "proposal": {
+        "hypothesis": "Establish the fixed-budget baseline.",
+        "based_on": null
+      },
+      "submitted_at": "2026-09-29T12:57:17.542192+00:00",
+      "status": "completed",
+      "valid": true,
+      "result_status": "valid",
+      "dev_psnr": 22.67446858712745,
+      "dev_metrics": {
+        "mean_per_image_psnr": 22.67446858712745,
+        "mean_psnr": 22.67446858712745,
+        "num_images": 1,
+        "finite": true,
+        "mean_ssim": 0.9476339817047119,
+        "protocol": "P256",
+        "eval_size": 256,
+        "recipe": {
+          "loss_family": "original",
+          "optimizer": "adam",
+          "learning_rate": 0.0001,
+          "weight_decay": 1e-07,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "loss_weights": {
+            "l1": 2.5,
+            "ssim": 0.5,
+            "delta_e": 0.02,
+            "perceptual": 0.01,
+            "cbcr": 1.0,
+            "lut_smoothness": 0.06,
+            "tm": 0.5,
+            "ltm_smoothness": 0.6,
+            "luma_energy_consistency": 0.2
+          },
+          "scheduler": {
+            "name": "CosineAnnealingLR",
+            "T_max": 1,
+            "eta_min": 1e-06
+          },
+          "epochs": 1,
+          "batch_size": 1,
+          "in_size": 256,
+          "eval_size": 256,
+          "seed": 7,
+          "extract_patches": false,
+          "validation_frequency": 1,
+          "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+        },
+        "mean_time_seconds": 3.2222323417663574,
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/dev/per_image.csv",
+        "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/dev/images"
+      },
+      "artifacts": {
+        "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/train/models/photofinishing_exp_001-best.pth",
+        "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/train/config",
+        "train_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/train/metrics.json",
+        "dev_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/dev/metrics.json",
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/dev/per_image.csv"
+      },
+      "logs": {
+        "worker": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/worker.log",
+        "train": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/train.log",
+        "dev": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_001/dev.log"
+      },
+      "error": null,
+      "reload_succeeded": true,
+      "decision": "Baseline establishes the initial DEV score."
+    },
+    {
+      "index": 1,
+      "run_id": "exp_002",
+      "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "proposal": {
+        "recipe": {
+          "loss_family": "mse"
+        },
+        "hypothesis": "The original multi-loss recipe reaches 22.67447 dB after the fixed one-epoch synthetic run. Test whether optimizing final RGB MSE directly improves this same dev criterion; change only the loss family. Engineering integration proposal by the assistant, not Naive.",
+        "based_on": {
+          "run_id": "exp_001",
+          "dev_psnr": 22.67446858712745,
+          "observation": "Independent checkpoint reload succeeded on one P256 dev image; this is the initial observed score, not a real-camera benchmark."
+        }
+      },
+      "submitted_at": "2026-09-29T12:59:30.428349+00:00",
+      "status": "completed",
+      "valid": true,
+      "result_status": "no_gain",
+      "dev_psnr": 22.267426134535206,
+      "dev_metrics": {
+        "mean_per_image_psnr": 22.267426134535206,
+        "mean_psnr": 22.267426134535206,
+        "num_images": 1,
+        "finite": true,
+        "mean_ssim": 0.9476780891418457,
+        "protocol": "P256",
+        "eval_size": 256,
+        "recipe": {
+          "loss_family": "mse",
+          "optimizer": "adam",
+          "learning_rate": 0.0001,
+          "weight_decay": 1e-07,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "loss_weights": {
+            "mse": 1.0
+          },
+          "scheduler": {
+            "name": "CosineAnnealingLR",
+            "T_max": 1,
+            "eta_min": 1e-06
+          },
+          "epochs": 1,
+          "batch_size": 1,
+          "in_size": 256,
+          "eval_size": 256,
+          "seed": 7,
+          "extract_patches": false,
+          "validation_frequency": 1,
+          "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+        },
+        "mean_time_seconds": 3.201430320739746,
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/dev/per_image.csv",
+        "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/dev/images"
+      },
+      "artifacts": {
+        "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train/models/photofinishing_exp_002-best.pth",
+        "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train/config",
+        "train_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train/metrics.json",
+        "dev_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/dev/metrics.json",
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/dev/per_image.csv"
+      },
+      "logs": {
+        "worker": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/worker.log",
+        "train": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train.log",
+        "dev": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/dev.log"
+      },
+      "error": null,
+      "reload_succeeded": true,
+      "decision": "DEV PSNR 22.26742613 did not exceed best 22.67446859; retain the best recipe."
+    },
+    {
+      "index": 2,
+      "run_id": "exp_003",
+      "recipe": {
+        "loss_family": "l1",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07
+      },
+      "proposal": {
+        "recipe": {
+          "loss_family": "l1"
+        },
+        "hypothesis": "Pure MSE fell 0.40704 dB below the original recipe at the same budget. Compare pure L1 with the same optimizer and rate to test whether the pixel-loss gradient weighting explains this fixture behavior. Engineering proposal by the assistant, not Naive.",
+        "based_on": {
+          "run_id": "exp_002",
+          "dev_psnr": 22.267426134535206,
+          "observation": "MSE was valid but no_gain; original remains best at 22.67446859 dB. No general claim follows from a one-epoch synthetic fixture."
+        }
+      },
+      "submitted_at": "2026-09-29T13:01:00.970382+00:00",
+      "status": "completed",
+      "valid": true,
+      "result_status": "no_gain",
+      "dev_psnr": 22.47858587788975,
+      "dev_metrics": {
+        "mean_per_image_psnr": 22.47858587788975,
+        "mean_psnr": 22.47858587788975,
+        "num_images": 1,
+        "finite": true,
+        "mean_ssim": 0.9355159401893616,
+        "protocol": "P256",
+        "eval_size": 256,
+        "recipe": {
+          "loss_family": "l1",
+          "optimizer": "adam",
+          "learning_rate": 0.0001,
+          "weight_decay": 1e-07,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "loss_weights": {
+            "l1": 1.0
+          },
+          "scheduler": {
+            "name": "CosineAnnealingLR",
+            "T_max": 1,
+            "eta_min": 1e-06
+          },
+          "epochs": 1,
+          "batch_size": 1,
+          "in_size": 256,
+          "eval_size": 256,
+          "seed": 7,
+          "extract_patches": false,
+          "validation_frequency": 1,
+          "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+        },
+        "mean_time_seconds": 3.337822198867798,
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/dev/per_image.csv",
+        "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/dev/images"
+      },
+      "artifacts": {
+        "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/train/models/photofinishing_exp_003-best.pth",
+        "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/train/config",
+        "train_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/train/metrics.json",
+        "dev_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/dev/metrics.json",
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/dev/per_image.csv"
+      },
+      "logs": {
+        "worker": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/worker.log",
+        "train": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/train.log",
+        "dev": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_003/dev.log"
+      },
+      "error": null,
+      "reload_succeeded": true,
+      "decision": "DEV PSNR 22.47858588 did not exceed best 22.67446859; retain the best recipe."
+    },
+    {
+      "index": 3,
+      "run_id": "exp_004",
+      "recipe": {
+        "loss_family": "original",
+        "optimizer": "adam",
+        "learning_rate": 0.0002,
+        "weight_decay": 1e-07
+      },
+      "proposal": {
+        "recipe": {
+          "loss_family": "original",
+          "learning_rate": 0.0002
+        },
+        "hypothesis": "Both single pixel losses underperformed the original composite recipe in the observed one-epoch fixture. Retain the current best loss and test doubling only the learning rate for faster fitting at this fixed tiny budget. Engineering proposal by the assistant, not Naive; no production recommendation.",
+        "based_on": {
+          "run_id": "exp_003",
+          "dev_psnr": 22.47858587788975,
+          "observation": "L1 scored22.47859 dB, above MSE22.26743 but below original22.67447. The next recipe inherits the best original recipe and changes only learning_rate."
+        }
+      },
+      "submitted_at": "2026-09-29T13:02:03.090150+00:00",
+      "status": "completed",
+      "valid": true,
+      "result_status": "improved",
+      "dev_psnr": 24.8013607872114,
+      "dev_metrics": {
+        "mean_per_image_psnr": 24.8013607872114,
+        "mean_psnr": 24.8013607872114,
+        "num_images": 1,
+        "finite": true,
+        "mean_ssim": 0.9662439823150635,
+        "protocol": "P256",
+        "eval_size": 256,
+        "recipe": {
+          "loss_family": "original",
+          "optimizer": "adam",
+          "learning_rate": 0.0002,
+          "weight_decay": 1e-07,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "loss_weights": {
+            "l1": 2.5,
+            "ssim": 0.5,
+            "delta_e": 0.02,
+            "perceptual": 0.01,
+            "cbcr": 1.0,
+            "lut_smoothness": 0.06,
+            "tm": 0.5,
+            "ltm_smoothness": 0.6,
+            "luma_energy_consistency": 0.2
+          },
+          "scheduler": {
+            "name": "CosineAnnealingLR",
+            "T_max": 1,
+            "eta_min": 2e-06
+          },
+          "epochs": 1,
+          "batch_size": 1,
+          "in_size": 256,
+          "eval_size": 256,
+          "seed": 7,
+          "extract_patches": false,
+          "validation_frequency": 1,
+          "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+        },
+        "mean_time_seconds": 3.158632516860962,
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/per_image.csv",
+        "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/images"
+      },
+      "artifacts": {
+        "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/models/photofinishing_exp_004-best.pth",
+        "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/config",
+        "train_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/metrics.json",
+        "dev_metrics": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/metrics.json",
+        "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev/per_image.csv"
+      },
+      "logs": {
+        "worker": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/worker.log",
+        "train": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train.log",
+        "dev": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/dev.log"
+      },
+      "error": null,
+      "reload_succeeded": true,
+      "decision": "DEV PSNR increased from 22.67446859 to 24.80136079; keep this recipe."
+    }
+  ],
+  "frozen": {
+    "run_id": "exp_004",
+    "dev_psnr": 24.8013607872114,
+    "recipe": {
+      "loss_family": "original",
+      "optimizer": "adam",
+      "learning_rate": 0.0002,
+      "weight_decay": 1e-07
+    },
+    "frozen_at": "2026-09-29T13:03:26.638095+00:00"
+  },
+  "updated_at": "2026-09-29T13:03:43.560857+00:00",
+  "final_test": {
+    "run_id": "exp_004",
+    "status": "completed",
+    "valid": true,
+    "command": [
+      "/workspace/scratch/4578f81f7dfe/isp-venv/bin/python",
+      "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/test.py",
+      "--model-path",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/models/photofinishing_exp_004-best.pth",
+      "--config-dir",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_004/train/config",
+      "--in-testing-dir",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/denoised_raw_images",
+      "--gt-testing-dir",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/srgb_images_style_0",
+      "--result-dir",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test",
+      "--eval-size",
+      "256",
+      "--data-testing-dir",
+      "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/test/data"
+    ],
+    "log": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test.log",
+    "started_at": "2026-09-29T13:03:26.811991+00:00",
+    "test_psnr": 24.80138451317119,
+    "test_metrics": {
+      "mean_per_image_psnr": 24.80138451317119,
+      "mean_psnr": 24.80138451317119,
+      "num_images": 1,
+      "finite": true,
+      "mean_ssim": 0.9662439823150635,
+      "protocol": "P256",
+      "eval_size": 256,
+      "recipe": {
+        "loss_family": "original",
+        "optimizer": "adam",
+        "learning_rate": 0.0002,
+        "weight_decay": 1e-07,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "loss_weights": {
+          "l1": 2.5,
+          "ssim": 0.5,
+          "delta_e": 0.02,
+          "perceptual": 0.01,
+          "cbcr": 1.0,
+          "lut_smoothness": 0.06,
+          "tm": 0.5,
+          "ltm_smoothness": 0.6,
+          "luma_energy_consistency": 0.2
+        },
+        "scheduler": {
+          "name": "CosineAnnealingLR",
+          "T_max": 1,
+          "eta_min": 2e-06
+        },
+        "epochs": 1,
+        "batch_size": 1,
+        "in_size": 256,
+        "eval_size": 256,
+        "seed": 7,
+        "extract_patches": false,
+        "validation_frequency": 1,
+        "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+      },
+      "mean_time_seconds": 3.824442148208618,
+      "per_image_csv": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test/per_image.csv",
+      "images_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/campaign/final_test/images"
+    },
+    "finished_at": "2026-09-29T13:03:43.560797+00:00"
+  }
+}

@@ -1,8 +1,6 @@
-# 原始 Modular Neural ISP 第一阶段工程包
+# 安装与启动
 
-本包包含工程覆盖文件、复现说明及合成联调产物。
-
-## 应用代码
+在本 examples/modular_neural_isp_phase1 目录执行：
 
 ```bash
 git clone --depth 1 https://github.com/SamsungLabs/modular_neural_isp.git
@@ -10,15 +8,13 @@ cp -a overlay/. modular_neural_isp/
 cd modular_neural_isp
 ```
 
-请在解压目录执行上述命令。随后按 README_PHASE1.md 安装依赖并运行。
-覆盖文件基于 2026-09-29 获取的官方源码；模型权重仍从官方仓库获取。
+然后按 [overlay/README_PHASE1.md](overlay/README_PHASE1.md) 安装环境、运行 baseline 和 campaign。覆盖文件基于本项目原始官方源码。
 
-## 包内容
+本轮默认 P512 dev 评测，每次运行重载 checkpoint。original/MSE/L1、Adam/AdamW、学习率可通过配置调整；模型结构保持固定。ARIS-Code 读取 campaign 的真实 dev 结果，再提交下一轮 proposal。最终测试单独执行。
 
-- overlay/：所有新增和修改的工程文件。
-- evidence/：本次实际执行的结果；全部是合成工程联调数据，不能当作真实画质评估。
-- evidence/trained/：短训练选出的权重与配置；仅用于验证输出可重载。
-- LICENSE.md：原始源码及模型许可。
+- overlay/：最新代码、配置、测试和说明。
+- review/：原审查意见及复现证据，完整保留。
+- evidence/review_fix/：本轮 CPU 合成数据联调证据。
+- Modular_Neural_ISP_Phase1.zip：历史 baseline 包，未包含本轮修复。
 
-已验证：原模型 CPU 前向、两轮原 loss 训练、最佳模型重载测试、官方全链路 demo、15 项测试。
-尚待资源验证：真实数据完整训练及真实 Naive/ARIS 调用。详情见 overlay/docs/verification.md。
+真实数据完整训练、真实 Naive/ARIS 驱动和多 seed 提升确认仍需对应资源。具体完成边界见 [本轮验证记录](overlay/docs/review-fix-verification.md)。

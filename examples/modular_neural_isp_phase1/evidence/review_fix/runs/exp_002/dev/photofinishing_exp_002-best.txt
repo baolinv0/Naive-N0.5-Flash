@@ -1,0 +1,1 @@
+Protocol = P256 - PSNR = 22.267426134535206 - SSIM = 0.9476780891418457 - Count = 1 - Finite = True - Time = 3.201430320739746

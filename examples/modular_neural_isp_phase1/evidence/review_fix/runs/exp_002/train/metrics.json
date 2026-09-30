@@ -1,0 +1,36 @@
+{
+    "mean_per_image_psnr": 22.267412725790013,
+    "mean_psnr": 22.267412725790013,
+    "num_images": 1,
+    "finite": true,
+    "protocol": "P256",
+    "eval_size": 256,
+    "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.0001,
+        "weight_decay": 1e-07,
+        "betas": [
+            0.9,
+            0.999
+        ],
+        "loss_weights": {
+            "mse": 1.0
+        },
+        "scheduler": {
+            "name": "CosineAnnealingLR",
+            "T_max": 1,
+            "eta_min": 1e-06
+        },
+        "epochs": 1,
+        "batch_size": 1,
+        "in_size": 256,
+        "eval_size": 256,
+        "seed": 7,
+        "extract_patches": false,
+        "validation_frequency": 1,
+        "initial_checkpoint": "/workspace/scratch/4578f81f7dfe/modular_neural_isp/photofinishing/models/photofinishing_s24-style-0.pth"
+    },
+    "best_checkpoint": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train/models/photofinishing_exp_002-best.pth",
+    "config_dir": "/workspace/scratch/4578f81f7dfe/review_fix_evidence/synthetic/campaign_runs/exp_002/train/config"
+}
