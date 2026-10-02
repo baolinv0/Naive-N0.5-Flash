@@ -36,3 +36,121 @@ python -m tm_research.cli campaign status --campaign-dir campaigns/naive-pilot >
 Save the original ARIS session export too if its terminal view omits tool messages. Retain the executor URL and served model/weights identity, ARIS version, inference settings, and startup/service logs that establish which model answered; remove API keys from shared configuration. Keep each `campaign next` response and the proposal written after it, plus `campaign.json` and the four run directories with their actual configs, commands, train/DEV logs and metrics. Three later proposals must each follow the preceding completed result; do not prewrite them.
 
 Pilot acceptance requires four valid, actually executed trials and the transcript showing Naive consuming feedback before each next proposal. If a trial is invalid, report the failure and the pilot as incomplete. No PSNR gain is required for workflow acceptance. Real-data improvement, multiple seeds, and TM attribution remain separate validation. Leave TEST untouched during this pilot.
+
+
+## Delegation policy for the live pilot
+
+This section governs the steps above. It is an operator/ARIS policy, not a new
+controller feature or a security boundary. The CLI validates recipes, citations,
+run validity and DEV selection; it does not enforce human approval, compute caps,
+or the scientific meaning of a hypothesis. Do not claim otherwise.
+
+Rationale: Shao et al., [Human–AI Collaboration at Scale](https://www.alphaxiv.org/abs/2608.human-ai-collaboration-at-scale.pdf),
+sections 3–5, distinguish task criticality (reversibility, visibility, impact),
+human agency (retained control), and productive/unproductive friction. Their
+observational chatbot study excludes Claude Code/Cowork and does not establish
+that adding friction causes better research. The rules below are our project
+policy derived from those distinctions.
+
+### 1. Authorize a bounded campaign once
+
+Before step 2, retain the operator's existing authorization in
+`evidence/live-pilot/control.md`: research question and allowed recipe space;
+config and source revision; evaluator/metric, split and fixed protocol;
+calibrated min_delta with measurements; max_trials and no_gain_limit;
+maximum per-run wall time, total training GPU-hours (calibration and failed
+attempts included), and any paid inference cap; TEST permission (false for this
+pilot). Record numeric caps or a reference to an already authorized allocation.
+Do not invent a spending limit or ask again when existing authorization covers it.
+If limits are missing, finish read-only preparation, then request only the missing
+allocation before launching compute. Run serially; no extra GPU rental/service.
+
+### 2. Autonomous execution inside that boundary
+
+ARIS may inspect TRAIN/DEV artifacts, wait/resume the same active run, correct
+proposal formatting, propose allowed recipes, execute budgeted trials, and
+report/finalize the controller-selected DEV result without per-trial approval.
+It may revise a local recipe hypothesis after contrary DEV evidence; changing
+the research question, model, data, initialization, seed, training budget,
+selection objective or allowed search space requires operator approval and a
+new campaign. Never rewrite old hypotheses or results.
+
+Before each submit, record in control.md: cited latest result, recipe delta,
+predicted observation, and an observation that would weaken the hypothesis.
+Keep the existing proposal JSON schema unchanged; these notes are not extra JSON
+keys. Prefer one changed factor for interpretable pilot trials. If changing
+several allowed fields, state that only the combined recipe can be evaluated,
+not the causal contribution of each field. A gain supports recipe selection,
+not automatically its proposed mechanism.
+
+### 3. Evidence gates are automatic; protocol changes are human decisions
+
+Use the existing independent DEV reload, finite score/image-count checks, and
+strict best + min_delta rule. Invalid is not negative scientific evidence;
+no_gain is not a failed execution. Preserve both and the existing stop counters.
+Evaluation reload spread calibrates numerical noise, not training-seed variance.
+
+Any suspected evaluator/metric defect, preprocessing/crop/color-space mismatch,
+or split contamination pauses new submissions. ARIS may diagnose and prepare a
+patch with a small TRAIN/DEV fixture, but must not adopt a new evaluator, metric,
+threshold, or protocol in the active campaign. Present the defect, affected runs,
+patch and verification evidence to the operator. After approval, use a new
+campaign and rerun baseline/comparisons under one protocol; retain the old record
+as superseded. Do not repair a disappointing score by changing what is measured.
+
+### 4. Preserve useful friction; bound mechanical recovery
+
+A timeout means inspect/wait for the existing run, not submit another.
+One operational repair attempt per incident is allowed within existing caps,
+only if it leaves the scientific protocol unchanged. Repeated identical failure,
+unknown execution state, or insufficient remaining compute pauses new launches.
+Never bypass duplicate-recipe rejection, edit campaign state, or extend trial
+limits to obtain four valid runs. Invalid trials still consume the existing
+budget; report an incomplete pilot when appropriate.
+
+When a hypothesis is contradicted, log the contradiction and revise the next
+in-scope proposal autonomously. When aggregate PSNR conflicts with DEV image
+quality (e.g. face tone/texture), log the affected DEV examples, inspect per-image
+evidence, and qualify the claim. Keep PSNR selection unchanged unless a new
+objective is explicitly authorized. Escalate unresolved protocol/goal ambiguity;
+do not escalate every no_gain. Friction is useful only when it changes an
+assumption, supplies evidence, or resolves a decision. Repeated rewording or
+rerunning without new evidence is a stop signal.
+
+### 5. TEST and spending are separate permissions
+
+Leave TEST untouched in this pilot, including images, labels, metrics and manual
+script calls. Outside this pilot, a previously explicit authorization for final
+held-out evaluation suffices: record it and freeze the DEV choice before
+`final-test`; no redundant approval is needed. Otherwise request it once.
+The CLI freeze check alone is not authorization. Once TEST is observed, do not
+use it to select recipes or present that same set as fresh confirmation after
+further tuning. Record accidental exposure and ask the operator for a new
+held-out evaluation plan.
+
+Before launching, check estimated cost/time against remaining authorized caps;
+monitor elapsed usage and stop the job at its authorized runtime limit. Record
+the interruption as incomplete/invalid, never as a score. If the host cannot
+monitor/enforce the limit, arrange an operator/scheduler limit before launch.
+Exceeding caps, additional seeds, larger data/resolution, extra trials or a new
+paid service requires specific operator authorization. Preserve partial artifacts.
+
+### 6. Separate reporting from scientific endorsement
+
+ARIS autonomously emits a factual end report: workflow evidence, valid/invalid
+trial count, baseline and retained/raw-best DEV scores, protocol, stop reason,
+cost, contradictions and unresolved limits. Four valid real trials plus the
+Naive feedback transcript establish workflow acceptance only; no gain is needed.
+A fixed-seed DEV gain is exploratory. Generalization, TM-specific attribution,
+and superiority to non-adaptive search need separate appropriate evidence.
+Draft such claims with supporting/contradicting artifacts; the operator decides
+whether to endorse or publish them. Do not hide a negative outcome or request
+approval merely to report it.
+
+For an escalation, append one compact decision record to control.md:
+`trigger | evidence/run paths | proposed change | effect on comparability |
+incremental cost | decision needed | operator decision + scope/time`.
+Pause the affected action, continue safe read-only preparation, and resume only
+within the recorded authorization. End the pilot with the operator reviewing
+one rejected hypothesis and one unresolved alternative explanation, so execution
+also develops research judgment.
