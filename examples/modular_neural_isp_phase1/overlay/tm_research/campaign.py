@@ -370,6 +370,38 @@ def validate_campaign_decision(campaign_dir, decision):
     return _validate_sidecar(campaign_dir, state, decision, state.get('latest_feedback'))
 
 
+def _action_prompt(route, proposal_allowed):
+    """Describe the current controller action without turning a pause into closure."""
+    action = route['action']
+    instructions = {
+        'wait': ('Wait for or collect existing work, then call campaign next for fresh routing. '
+                 'If no job is active, retain the recorded pause until new evidence or a scoped continuation; do not launch another job.'),
+        'diagnose': ('Inspect existing DEV feedback and execution state without changing the scientific protocol. '
+                     'A pending diagnosis needs an explicit matching continuation before new submissions.'),
+        'finalize': ('Call campaign finalize only for a valid retained candidate that is not already frozen. '
+                     'If no valid candidate exists, report the failure and its logs instead.'),
+        'report_stop': ('Report the reason to stop search and the measured results. '
+                        'Freeze a valid retained candidate once only if not already frozen and permitted by the existing task; '
+                        'otherwise report its frozen or unavailable state. Do not resume search.'),
+        'request_scope_change': ('Pause new work and report the evidence and requested scope change. '
+                                 'A change needs a new authorized campaign; the current contract cannot be enlarged.'),
+        'confirm': ('Use only the authorized confirmation plan for the frozen candidate. '
+                    'Inspect existing confirmation progress before advancing unfinished tasks; '
+                    'retain completed and failed tasks without retrying or reopening search.'),
+        'propose': ('Read the actual feedback and propose exactly one changed recipe only while proposal_allowed is true.'
+                    if proposal_allowed else
+                    'Submission is blocked. Inspect the campaign state and obtain fresh routing before proposing; this does not authorize finalization.'),
+    }
+    prompt = ('Follow next_action.action as the sole action selector; proposal_allowed is only a submission gate. '
+              'A pause does not finish the research. '
+              f'Current action: {action}. ' + instructions[action])
+    if action == 'diagnose' and route.get('review_required'):
+        prompt += (' Read campaign review-packet for the current trigger_id, compare competing explanations, '
+                   'and save the scoped slow review with campaign record-decision even when no experiment follows. '
+                   'Then call campaign next and follow its updated action.')
+    return prompt
+
+
 def next_proposal(campaign_dir):
     """Return a result-dependent task for the actual external proposer, never a grid."""
     state = campaign_status(campaign_dir)
@@ -388,22 +420,25 @@ def next_proposal(campaign_dir):
         allowed = allowed and route['action'] == 'propose' and not route.get('review_required')
     if state.get('active_health') == 'unknown':
         allowed = False
-    prompt = ('Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older evidence. Propose exactly one changed recipe. Explain the expected effect, '
-              'and cite an observed prior run and its DEV score in based_on (rounding within 0.0001 dB is accepted). Use the latest failure or gain '
-              'to choose the next change; do not submit an unevaluated fixed grid. You may change only loss_family '
+    prompt = _action_prompt(route, allowed)
+    prompt += (' Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older evidence. '
+              'When routed to propose, explain the expected effect and cite an observed prior run and its DEV score in based_on '
+              '(rounding within 0.0001 dB is accepted). Use actual results to choose the next change; '
+              'do not submit an unevaluated fixed grid. You may change only loss_family '
               '(original|mse|l1), optimizer (adam|adamw), learning_rate, and weight_decay. '
               'Keep the model, data, initialization, seed, epochs, batch size, image sizes and validation frequency fixed. '
               'Selection uses independently reloaded mean per-image DEV PSNR. Never inspect TEST for a proposal. '
               'best is the retained effective candidate; raw_best records the highest observed score. '
               'An improvement must exceed best.dev_psnr + the frozen min_delta; smaller gains are no_gain. '
-              'Do not change min_delta during the campaign. '
-              'Write JSON with recipe, hypothesis, and based_on={run_id,dev_psnr,observation}, then call campaign submit. '
-              'Wait for the actual run and call campaign next again. Stop when proposal_allowed is false.')
+              'Do not change min_delta during the campaign.')
     prompt += (' Separate measured observations from untested causal explanations. Cite observation IDs, '
                'give an alternative explanation and a falsifier. based_on cites evidence; partial recipes '
                'inherit effective best, and every run uses the fixed campaign initialization. '
-               'An explicit comparison does not change construction inheritance. In control mode write '
-               'the independent decision sidecar acknowledging latest feedback, then submit --decision.')
+               'An explicit comparison does not change construction inheritance.')
+    if route['action'] == 'propose' and allowed:
+        prompt += (' Write JSON with recipe, hypothesis, and based_on={run_id,dev_psnr,observation}, then call campaign submit. '
+                   'In control mode write the independent decision sidecar acknowledging latest feedback and submit --decision. '
+                   'Wait for the actual run and call campaign next again.')
     # Keep baseline, best and recent six results plus the complete historical index.
     keep = {t['run_id'] for t in state['trials'][-6:]}
     if state['trials']:

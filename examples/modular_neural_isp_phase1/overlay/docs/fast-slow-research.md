@@ -25,6 +25,8 @@ The configuration remains scientific YAML. Control and observation fields are se
 
 `next` returns the newest feedback, baseline/best/recent six results, a full historical index and `next_action`. Feedback versions have readable immutable revision IDs. Unchanged rebuilds reuse a version; corrected inputs or rules create a new version and preserve old observations. Each next/submit reads the newest published revision under the campaign lock: historical observations remain citable, but the latest acknowledgment must advance. An unreadable newest artifact is an explicit access failure, never a reason to reuse stale readiness.
 
+Use `next_action.action` as the sole action selector. `proposal_allowed` is a submission guard, not an end-of-research signal. A false guard on a `diagnose` or `wait` route means pause new trials while completing that action. Follow the [ARIS action table](aris-campaign-task.md): wait for existing work, diagnose or review the current event, propose only when both the route and guard permit it, close search on `finalize` / `report_stop`, pause for `request_scope_change`, or resume an already authorized frozen confirmation plan on `confirm`. Fetch fresh `campaign next` after waiting, repairing feedback or recording a review. If route and guard disagree, inspect state and fetch a fresh route without submitting or inferring permission to finalize.
+
 ```bash
 python -m tm_research.cli campaign feedback --campaign-dir campaigns/pilot
 python -m tm_research.cli campaign feedback --campaign-dir campaigns/pilot --run exp_002 --section paired_comparison
@@ -34,7 +36,7 @@ python -m tm_research.cli campaign feedback --campaign-dir campaigns/pilot --run
 
 Use returned run IDs and references; the sample IDs above are syntax examples. Pairing uses stable sample identity, never CSV row order. Partial coverage reports a matched subset, not a full DEV mean. Group labels overlap and small groups remain descriptive. PNG-8 cases are display evidence; scores and optional regions use float evaluation tensors. Output codevalue statistics are not physical illumination or ISO.
 
-Write the unchanged three-key proposal (`recipe`, `hypothesis`, `based_on`) and a separate decision based on `configs/decision.example.json`. A sidecar must acknowledge the latest terminal run and feedback revision, cite actual observation IDs, include prediction, falsifier and alternative explanation, and match the submitted recipe patch exactly. Citing evidence establishes traceability, not proof of a causal mechanism or an effective research strategy.
+On the `propose` route with `proposal_allowed: true`, write the unchanged three-key proposal (`recipe`, `hypothesis`, `based_on`) and a separate decision based on `configs/decision.example.json`. A sidecar must acknowledge the latest terminal run and feedback revision, cite actual observation IDs, include prediction, falsifier and alternative explanation, and match the submitted recipe patch exactly. Citing evidence establishes traceability, not proof of a causal mechanism or an effective research strategy.
 
 ```bash
 python -m tm_research.cli decision --campaign-dir campaigns/pilot --decision decision.local.json
@@ -59,6 +61,8 @@ python -m tm_research.cli campaign wait --campaign-dir campaigns/pilot --timeout
 
 Review is event-triggered, not a second resident runtime. `review_required` is separate from the action vocabulary (`wait`, `diagnose`, `propose`, `finalize`, `confirm`, `request_scope_change`, `report_stop`). Recording a slow decision also persists its action in `pending_slow_decision`; a recorded review alone never reopens proposals. Record slow decisions independently even when no training follows.
 
+When `next_action.action` is `diagnose` and `review_required` is true, read `campaign review-packet --trigger <next_action.trigger_id>`, inspect its evidence and competing explanations, and record a `slow_review` outcome with `campaign record-decision`. Fetch `campaign next` again and follow its resulting action; do not jump to `campaign finalize` because `proposal_allowed` is false. When review is not required, follow the diagnostic reason: rebuild required feedback without retraining, inspect a hold/unknown worker, or preserve an already pending diagnosis until new evidence supports an explicit continuation. A `wait` without active work can be a recorded pause, not permission to start another run.
+
 | Recorded action | Subsequent control state |
 |---|---|
 | `diagnose` / `wait` | Keep the pending diagnosis/pause; collect existing work, but do not launch another job. |
@@ -75,6 +79,8 @@ A wait timeout bounds the caller, not the worker. Resume the same saved active r
 
 ## Confirmation after freezing
 
+Enter this stage only for an already authorized plan and a valid frozen selection. A `finalize` / `report_stop` route closes search; freeze once only when a valid retained candidate exists, no active/pending launch remains and closure is permitted. Reuse an existing frozen selection. Report an invalid baseline or missing candidate without attempting to freeze it. A `diagnose`, `wait` or `request_scope_change` route does not enter this stage. `confirm` supplies no new compute or data permission; if no confirmation plan has been authorized, report confirmation pending.
+
 ```bash
 python -m tm_research.cli campaign finalize --campaign-dir campaigns/pilot
 python -m tm_research.cli confirmation init --campaign-dir campaigns/pilot --confirmation-dir campaigns/pilot/confirmation --plan configs/confirmation.local.json --control campaigns/pilot/control.json
@@ -82,7 +88,7 @@ python -m tm_research.cli confirmation next --confirmation-dir campaigns/pilot/c
 python -m tm_research.cli confirmation report --confirmation-dir campaigns/pilot/confirmation
 ```
 
-Repeat `confirmation next` until its recorded task list is terminal; use its returned task identity and run ID. Confirmation runs frozen baseline/winner recipes directly, keyed by arm+seed+replicate, without search deduplication or updates to search best. A parent association binds frozen campaign/control identity; the parent ledger checks linked confirmation activity and cost together with final TEST before any stage starts. The plan freezes seeds, replication, execution order, GPU budget, useful-delta threshold, failure policy and final-checkpoint rule. Failed or incomplete pairs remain in the report and are never silently removed or automatically retried.
+The command sequence shows first initialization of an authorized plan; skip `campaign finalize` when already frozen and skip `confirmation init` when the plan is already registered. Resume `confirmation next` until its recorded task list is terminal, using its returned task identity and run ID. Then report that plan rather than recreating or rerunning it, even if campaign routing still returns `confirm`. Confirmation runs frozen baseline/winner recipes directly, keyed by arm+seed+replicate, without search deduplication or updates to search best. A parent association binds frozen campaign/control identity; the parent ledger checks linked confirmation activity and cost together with final TEST before any stage starts. The plan freezes seeds, replication, execution order, GPU budget, useful-delta threshold, failure policy and final-checkpoint rule. Failed or incomplete pairs remain in the report and are never silently removed or automatically retried.
 
 Every actual confirmation start rechecks the locked current parent, including a recovered prepared run and the transition from a frozen checkpoint to independent evaluation. A hold preserves the task/checkpoint for the same authorized continuation after resolution; terminal result collection remains available. The gate excludes only that attempt’s own reservation and retains its completed training cost and all other linked activity.
 
