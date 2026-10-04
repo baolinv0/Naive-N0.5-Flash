@@ -4,6 +4,7 @@
 
 - [安装入口](START_HERE.md)
 - [运行说明](overlay/README_PHASE1.md)
+- [部署与真实闭环验收使用手册](overlay/docs/validation-manual_CN.md)
 - [当前研究合同](overlay/docs/engineering-contract.md)
 - [本轮实现与实测记录](overlay/docs/review-fix-verification.md)
 - [二次 review 后续修复与验证](overlay/docs/rereview-followup.md)

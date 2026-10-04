@@ -2,6 +2,8 @@
 
 保留 Samsung 官方 photofinishing 模型、RAW/metadata 前处理与原始 recipe，增加可选 MSE/L1、AdamW/学习率配置，以及由 ARIS-Code + Naive 驱动的串行 campaign。未接入历史增强方案、风格迁移或教师监督。
 
+验证当前快慢系统请先阅读 [部署与真实闭环验收使用手册](docs/validation-manual_CN.md)：先验实际节点原生执行，再验真实 Naive 四轮反馈链。手册说明受控初始化、宿主 JSON 接入和 W 的通过标准；下面保留基础接口示例。
+
 ## 安装
 
 将本目录覆盖文件应用到 Samsung 官方 ISP 仓库，在该仓库中执行：
@@ -58,14 +60,13 @@ python -m tm_research.cli campaign next --campaign-dir campaigns/pilot
 
 `raw_best` 保存最高实测分数；`best` 仅在增幅严格超过冻结的 `min_delta` 后更新并清零无收益计数，冻结候选也使用这个有效 `best`。示例 `0.01 dB` 是工程初值，真实 pilot 前应依据同一权重在目标环境的重复 DEV 评测波动确定，并在初始化时固定，不能根据后续结果临时更改。完整的 baseline＋3 次真实提案启动与证据要求见 [ARIS pilot](docs/aris-campaign-task.md#real-naive-pilot-baseline-plus-three-proposals)。
 
-## 封存测试
+## 冻结与授权后的测试
 
 ```bash
 python -m tm_research.cli campaign finalize --campaign-dir campaigns/pilot
-python -m tm_research.cli final-test --campaign-dir campaigns/pilot
 ```
 
-先冻结候选，再单独运行 test。日常研究 prompt 不包含测试分数。可选确认模块对冻结 baseline/winner 进行配对 seed 复训；仅 GTM/LTM 更新的归因实验仍是独立任务，当前不声称已确认 PSNR 提升。
+先依据 `next_action` 冻结候选。当前 pilot 禁止 TEST；`final-test` 仅供另有明确 TEST 授权的冻结流程使用。日常研究 prompt 不包含测试分数。可选确认模块对冻结 baseline/winner 进行配对 seed 复训；仅 GTM/LTM 更新的归因实验仍是独立任务，当前不声称已确认 PSNR 提升。
 
 ## 原始全 ISP 推理
 
