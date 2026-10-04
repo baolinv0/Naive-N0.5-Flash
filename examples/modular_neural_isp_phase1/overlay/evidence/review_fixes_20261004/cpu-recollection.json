@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-04",
+  "purpose": "recollect historical terminal synthetic CPU artifacts with current modules; no new train/eval",
+  "task_ids_unchanged": true,
+  "search_best_unchanged": true,
+  "status": "completed",
+  "scope": {
+    "kind": "original_dev"
+  },
+  "pairs": [
+    {
+      "seed": 7,
+      "replicate": 1,
+      "status": "complete",
+      "baseline_run_id": "exp_001",
+      "winner_run_id": "exp_002",
+      "delta_db": 4.692782763153264,
+      "per_image": {
+        "status": "complete",
+        "paired_count": 1,
+        "expected_count": 1,
+        "baseline_native_count": 1,
+        "winner_native_count": 1,
+        "missing_in_winner": [],
+        "missing_in_baseline": [],
+        "missing_in_both": [],
+        "errors": [],
+        "metric_tolerance_db": 1e-06,
+        "scope": "full",
+        "deltas": [
+          {
+            "sample_id": "DEV:synthetic_validation_000.png",
+            "delta_db": 4.692782763153264
+          }
+        ]
+      }
+    }
+  ],
+  "claims": {
+    "W": {
+      "status": "pending",
+      "reason": "Requires actual ordered baseline and three feedback-consuming live proposal events"
+    },
+    "Q": {
+      "status": "supported_in_scope",
+      "reason": "DEV selection is exploratory; confirmation is limited to its frozen protocol",
+      "statistical_significance": false,
+      "scope": {
+        "kind": "original_dev"
+      },
+      "adaptive_dev_bias": true,
+      "confirmation_ref": "/workspace/scratch/6c78134e8d18/aris_cpu_acceptance/confirmations/paired_cpu",
+      "association": {
+        "confirmation_dir": "/workspace/scratch/6c78134e8d18/aris_cpu_acceptance/confirmations/paired_cpu",
+        "parent_campaign": "/workspace/scratch/6c78134e8d18/aris_cpu_acceptance/campaign",
+        "frozen_run_id": "exp_004",
+        "baseline_run_id": "exp_001",
+        "campaign_id": "aris_cpu_engineering_20261003",
+        "protocol_id": "P256",
+        "source_revision": "326009cc1b735ff83bbcf8919f98c0f495cc74c4",
+        "approved_config_ref": "/workspace/scratch/6c78134e8d18/aris_cpu_acceptance/baseline.yaml"
+      },
+      "scene_independence": null,
+      "confirmation_pairs": [
+        {
+          "seed": 7,
+          "replicate": 1,
+          "status": "complete",
+          "delta_db": 4.692782763153264,
+          "baseline_run_id": "exp_001",
+          "winner_run_id": "exp_002"
+        }
+      ],
+      "planned_pairs": 1,
+      "complete_pairs": 1,
+      "mean_delta_db": 4.692782763153264,
+      "delta_useful_db": 0.01
+    },
+    "R": {
+      "status": "unavailable",
+      "reason": "Requires a prespecified equal-budget strategy comparator"
+    },
+    "P": {
+      "status": "unavailable",
+      "reason": "Requires agreed quality/device/user conditions and independent coverage"
+    }
+  },
+  "final_checkpoint_ref": {
+    "status": "unavailable"
+  }
+}

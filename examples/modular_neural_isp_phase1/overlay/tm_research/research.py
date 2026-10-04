@@ -33,7 +33,8 @@ def route_next_action(state, control=None, feedback=None):
     run_id = last.get('run_id', 'initial')
     refs = [feedback['feedback_ref']] if feedback.get('feedback_ref') else []
     handled = set(state.get('handled_slow_triggers', []))
-    handled.update(d.get('trigger_id') for d in state.get('research_decisions', []) if isinstance(d, dict))
+    approved = {d.get('trigger_id') for d in state.get('research_decisions', [])
+                if isinstance(d, dict) and d.get('kind') == 'slow_review' and d.get('action') == 'propose'}
     def route(action, reason, event, review=False):
         trigger = f'{_campaign_id(state, control)}/{run_id}/{event}'
         return {'action': action, 'trigger_id': trigger, 'reason': reason,
@@ -43,11 +44,11 @@ def route_next_action(state, control=None, feedback=None):
         unknown = state.get('liveness') == 'unknown' or state.get('active_health') == 'unknown'
         return route('diagnose' if unknown else 'wait',
                      'Existing run must be resolved before new work', 'active_unknown' if unknown else 'active')
-    if not control:
+    if not control and not state.get('pending_slow_decision'):
         return route('report_stop' if state.get('stop_reason') or state.get('frozen') else 'propose',
                      'Legacy campaign status; no new authorization inferred', 'legacy_status')
     # Freeze and hard stops cannot be undone by missing diagnostics or a review.
-    if state.get('frozen'):
+    if state.get('frozen') and control:
         gate = check_action(control, state, 'confirm')
         return route('confirm' if gate['allowed'] else 'report_stop',
                      'Frozen candidate: ' + gate['reason'], 'frozen', True)
@@ -55,6 +56,17 @@ def route_next_action(state, control=None, feedback=None):
         return route('report_stop', 'Search hard stop: ' + str(state.get('stop_reason') or state['status']), 'hard_stop', True)
     if state.get('research_hold') or state.get('liveness') == 'unknown' or state.get('active_health') == 'unknown':
         return route('diagnose', 'Resolve recorded protocol hold or unknown job identity', 'research_hold')
+    pending = state.get('pending_slow_decision')
+    if pending:
+        # Expose the current event identity, even if collection advanced the last
+        # terminal run since the diagnosis. A continuation must acknowledge it.
+        transient = dict(state)
+        transient.pop('pending_slow_decision', None)
+        current = route_next_action(transient, control, feedback)
+        return {**current, 'action': pending['action'], 'review_required': False,
+                'reason': 'Pending slow decision ' + pending['decision_id'] + ': ' + pending['action']}
+    if not control:
+        return route('propose', 'Legacy campaign status; no new authorization inferred', 'legacy_status')
     if feedback.get('proposal_ready') is False:
         return route('diagnose', 'Rebuild required evidence without retraining', 'required_diagnostics')
     if feedback.get('protocol_suspect') or feedback.get('data_contamination') or feedback.get('test_exposure'):
@@ -64,12 +76,15 @@ def route_next_action(state, control=None, feedback=None):
         return route('diagnose' if gate['remaining_budget'] is None else 'report_stop', gate['reason'], 'resource_boundary')
     conflict = feedback.get('evidence_conflict')
     if conflict and isinstance(conflict, dict) and conflict.get('evidence_refs'):
-        return route('diagnose', 'Recorded evidence conflict requires competing explanations', 'evidence_conflict', True)
+        event = route('diagnose', 'Recorded evidence conflict requires competing explanations', 'evidence_conflict', True)
+        if event['trigger_id'] in approved:
+            return route('propose', 'Explicit scoped slow review permits another experiment', 'evidence_conflict')
+        return event
     threshold = control.get('slow_policy', {}).get('consecutive_valid_no_gain', 2)
     if _valid_no_gain(state) >= threshold:
         event = route('diagnose', 'Consecutive valid no_gain requires scoped slow review', 'valid_plateau', True)
-        if not event['review_required']:
-            return route('propose', 'Plateau review already recorded; remain within existing limits', 'valid_plateau')
+        if event['trigger_id'] in approved:
+            return route('propose', 'Explicit scoped slow review permits another experiment', 'valid_plateau')
         return event
     return route('propose', 'Search remains within frozen bounds', 'continue')
 
@@ -216,6 +231,19 @@ def _decisions(directory):
     return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()] if path.exists() else []
 
 
+def _review_start_state(state):
+    """Exclude only a blocked, verified unstarted request for its review gate."""
+    transient = dict(state)
+    transient.pop('pending_slow_decision', None)
+    blocked = state.get('launch_block') or {}
+    role = blocked.get('pending_role')
+    if role in ('active', 'launch_intent'):
+        transient.pop(role, None)
+    elif state.get('launch_intent') and not state.get('active'):
+        transient.pop('launch_intent', None)
+    return transient
+
+
 def _persist_decision(directory, state, decision):
     """Caller owns campaign lock and saves state; share persistence with submit."""
     from .runner import _write_json
@@ -223,6 +251,32 @@ def _persist_decision(directory, state, decision):
     old = next((d for d in _decisions(directory) if d.get('decision_id') == decision['decision_id']), None)
     if old is not None and old != decision:
         raise ValueError('decision_id already exists with a different immutable decision')
+    already_applied = any(d.get('decision_id') == decision['decision_id'] and d.get('kind') == decision['kind']
+                          for d in state.get('research_decisions', []))
+    pending = state.get('pending_slow_decision') or {}
+    if (decision.get('kind') == 'slow_review' and not already_applied
+            and pending.get('action') in ('report_stop', 'request_scope_change', 'finalize')
+            and decision['action'] != pending['action']):
+        raise ValueError('A terminal slow decision cannot be overwritten; use explicit closure or a new authorized campaign')
+    if decision.get('kind') == 'slow_review' and decision['action'] == 'propose' and not already_applied:
+        transient = _review_start_state(state)
+        queued = next((state[role] for role in ('launch_intent', 'active')
+                       if state.get(role) and not transient.get(role)), None)
+        if pending and queued and decision['requested_change'] != (queued.get('proposal') or {}).get('recipe'):
+            raise ValueError('Slow continuation must approve the immutable queued proposal.recipe patch')
+        feedback = _current_feedback(directory, state)
+        current = route_next_action(transient, state.get('control'), feedback)
+        if not decision.get('trigger_id') or decision['trigger_id'] != current['trigger_id']:
+            raise ValueError('slow_review propose trigger_id must match the current trigger')
+        if current['action'] not in ('propose', 'diagnose'):
+            raise ValueError('Current research action does not permit a slow continuation')
+        if state.get('control'):
+            gate = check_action(state['control'], transient, {'action': 'propose', 'recipe': decision['requested_change']})
+            if not gate['allowed']:
+                raise ValueError('Control disallows slow continuation: ' + gate['reason'])
+        if (state.get('research_hold') or feedback.get('proposal_ready') is False
+                or feedback.get('protocol_suspect') or feedback.get('data_contamination') or feedback.get('test_exposure')):
+            raise ValueError('Required evidence or protocol diagnosis still blocks continuation')
     snapshot = directory / 'decisions' / (decision['decision_id'] + '.json')
     if snapshot.exists() and json.loads(snapshot.read_text(encoding='utf-8')) != decision:
         raise ValueError('Immutable decision snapshot already exists with different content')
@@ -231,11 +285,24 @@ def _persist_decision(directory, state, decision):
     if old is None:
         with (directory / 'research_decisions.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(decision, ensure_ascii=False, allow_nan=False) + '\n')
-    if not any(d.get('decision_id') == decision['decision_id'] for d in state.setdefault('research_decisions', [])):
+    recorded = next((d for d in state.setdefault('research_decisions', [])
+                     if d.get('decision_id') == decision['decision_id']), None)
+    if recorded is None:
         state['research_decisions'].append({'decision_id': decision['decision_id'], 'action': decision['action'],
-                                           'trigger_id': decision.get('trigger_id'), 'decision_ref': str(snapshot)})
-    if decision.get('trigger_id') and decision['trigger_id'] not in state.setdefault('handled_slow_triggers', []):
-        state['handled_slow_triggers'].append(decision['trigger_id'])
+                                           'kind': decision['kind'], 'trigger_id': decision.get('trigger_id'), 'decision_ref': str(snapshot)})
+    else:
+        recorded.setdefault('kind', decision['kind'])
+    if decision.get('kind') == 'slow_review' and not already_applied:
+        if decision['action'] == 'propose':
+            state['pending_slow_decision'] = None
+            if decision['trigger_id'] not in state.setdefault('handled_slow_triggers', []):
+                state['handled_slow_triggers'].append(decision['trigger_id'])
+        elif (state.get('pending_slow_decision') or {}).get('action') not in ('report_stop', 'request_scope_change', 'finalize'):
+            trigger = decision.get('trigger_id') or route_next_action(
+                _review_start_state(state), state.get('control'), _current_feedback(directory, state))['trigger_id']
+            state['pending_slow_decision'] = {'decision_id': decision['decision_id'],
+                                            'action': decision['action'], 'trigger_id': trigger,
+                                            'decision_ref': str(snapshot)}
     return copy.deepcopy(decision)
 
 
@@ -252,7 +319,21 @@ def record_research_decision(campaign_dir, decision):
         if old:
             if old != decision:
                 raise ValueError('decision_id already exists with a different immutable decision')
-            return old
+            metadata = state.get('research_decisions', [])
+            index = next((i for i, d in enumerate(metadata) if d.get('decision_id') == old['decision_id']), None)
+            if index is not None:
+                if metadata[index].get('kind') or old.get('kind') != 'slow_review' or old['action'] == 'propose':
+                    return old
+                # Explicit replay can apply an archived pre-upgrade stop or the
+                # latest diagnosis. Never let an old proposal clear newer intent
+                # or restore a diagnosis superseded by subsequent decisions.
+                if old['action'] in ('diagnose', 'wait') and index != len(metadata) - 1:
+                    return old
+                _persist_decision(directory, state, old)
+                _save(directory, state)
+                return old
+            # The immutable log may have committed before an interrupted state
+            # write. Reapply through the same validation and control path below.
         feedback = _current_feedback(directory, state)
         transient = dict(state)
         # Resolve only explicitly cited historical revisions; never rename observations.
@@ -293,6 +374,7 @@ def build_review_packet(campaign_dir, trigger=None):
             'control': state.get('control'), 'feedback': feedback,
             'history': state.get('trials', []), 'best': state.get('best'),
             'frozen': state.get('frozen'), 'research_hold': state.get('research_hold'),
+            'pending_slow_decision': state.get('pending_slow_decision'),
             'alternative_explanations': list(dict.fromkeys(d['alternative_explanation'] for d in decisions if d.get('alternative_explanation'))),
             'decisions': decisions,
             'evidence_refs': [str(directory / 'campaign.json')] + ([feedback['feedback_ref']] if feedback.get('feedback_ref') else []),
@@ -451,6 +533,8 @@ def _w_claim(state, directory):
         value = Path(ref)
         return value if value.is_absolute() else directory / value
     try:
+        from .workflow import validate_workflow_evidence
+        validate_workflow_evidence(state, directory, provenance)
         service = _read_json(path(provenance['service_config_ref']))
         for field in ('model_id', 'weights_ref', 'executor_url', 'aris_version', 'startup_record_ref'):
             _nonempty(service.get(field), 'live service ' + field)
@@ -527,6 +611,8 @@ def build_campaign_report(campaign_dir):
     gpu_hours = ledger['gpu_hours'] if ledger['known'] else 'unavailable'
     report = {'campaign_id': _campaign_id(state), 'claims': _claim_levels(state, _confirmation(directory), directory),
               'best': state.get('best'), 'frozen': state.get('frozen'), 'stop_reason': state.get('stop_reason'),
+              'pending_slow_decision': copy.deepcopy(state.get('pending_slow_decision')),
+              'final_checkpoint_ref': copy.deepcopy(state.get('final_checkpoint_ref') or {'status': 'unavailable'}),
               'trials': [{'run_id': t.get('run_id'), 'valid': t.get('valid'), 'result_status': t.get('result_status'),
                           'dev_psnr': t.get('dev_psnr'), 'error': t.get('error'), 'decision': t.get('decision')}
                          for t in trials],
@@ -607,6 +693,7 @@ def export_research_memory(campaign_dir):
                     if not scope_matches:
                         scope_limits.append('Declared claim_scope does not match a linked frozen confirmation scope; the declaration is retained as tentative.')
                 record = {'campaign_id': key[0], 'decision_id': key[1], 'status': status,
+                          'final_checkpoint_ref': copy.deepcopy(state.get('final_checkpoint_ref') or {'status': 'unavailable'}),
                           'scope': {'protocol_id': control.get('protocol_id'),
                                     'source_revision': control.get('source_revision'),
                                     'model': state.get('config', {}).get('model'),

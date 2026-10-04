@@ -62,7 +62,7 @@ def main(argv=None):
     p = sub.add_parser('campaign')
     actions = p.add_subparsers(dest='campaign_action', required=True)
     for name in ('init', 'next', 'submit', 'status', 'wait', 'finalize', 'feedback',
-                 'review-packet', 'record-decision', 'report', 'memory'):
+                 'review-packet', 'record-decision', 'report', 'memory', 'final-checkpoint'):
         command = actions.add_parser(name)
         command.add_argument('--campaign-dir', required=True)
         if name == 'init':
@@ -78,6 +78,8 @@ def main(argv=None):
         if name == 'submit':
             command.add_argument('--proposal', required=True)
             command.add_argument('--decision')
+        if name == 'final-checkpoint':
+            command.add_argument('--confirmation-dir')
         if name == 'record-decision':
             command.add_argument('--decision', required=True)
         if name == 'feedback':
@@ -88,9 +90,22 @@ def main(argv=None):
             command.add_argument('--trigger')
         if name == 'wait':
             command.add_argument('--timeout', type=float)
+    p = sub.add_parser('capture-workflow', help='Capture actual ordinary campaign CLI input/output')
+    p.add_argument('--capture-dir', required=True)
+    p.add_argument('--service-dir', required=True)
+    p.add_argument('command', nargs=argparse.REMAINDER)
+    p = sub.add_parser('register-workflow', help='Convert and register preserved CLI/adapter evidence')
+    p.add_argument('--campaign-dir', required=True)
+    p.add_argument('--capture-dir', required=True)
     args = parser.parse_args(argv)
     try:
-        if args.action == 'baseline':
+        if args.action == 'capture-workflow':
+            from .workflow import capture_cli
+            return capture_cli(args.capture_dir, args.service_dir, args.command)
+        elif args.action == 'register-workflow':
+            from .workflow import register_workflow
+            result = register_workflow(args.campaign_dir, args.capture_dir)
+        elif args.action == 'baseline':
             cfg = load_config(args.config)
             result = {'run_id': run_baseline(cfg), 'runs_dir': cfg['runs_dir']}
         elif args.action == 'commands':
@@ -127,6 +142,9 @@ def main(argv=None):
                                              args.max_trials, args.no_gain_limit, wait=args.wait,
                                              min_delta=args.min_delta, control_ref=args.control,
                                              profile_ref=args.profile)
+            elif args.campaign_action == 'final-checkpoint':
+                from .campaign import resolve_final_checkpoint
+                result = resolve_final_checkpoint(args.campaign_dir, confirmation_dir=args.confirmation_dir)
             elif args.campaign_action == 'submit':
                 result = submit_proposal(args.campaign_dir, _json(args.proposal), wait=args.wait,
                                          decision_ref=args.decision)

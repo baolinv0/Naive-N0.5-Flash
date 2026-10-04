@@ -16,7 +16,7 @@ from .runner import (BUDGET_DEFAULTS, RECIPE_DEFAULTS, _execute, _now, _resolve_
 
 from .evidence import (build_run_feedback, build_fallback_feedback, resolve_trial_references,
                        diff_scientific_config, validate_feedback_access)
-from .control import load_control, check_action
+from .control import load_control, check_action, pending_decision_reason
 from .research import route_next_action, validate_research_decision, _persist_decision, _safe_feedback
 
 
@@ -189,6 +189,9 @@ def campaign_feedback(campaign_dir, run_id=None):
 
 
 def _authorize(state, action):
+    pending = pending_decision_reason(state, action)
+    if pending:
+        raise ValueError('Pending slow decision disallows action: ' + pending)
     if state.get('control'):
         result = check_action(state['control'], state, action, None)
         if not result['allowed']:
@@ -234,14 +237,17 @@ def _launch(directory, state, recipe, proposal, decision=None):
 
 def _current_start_allowed(directory, state, pending_role):
     pending = state[pending_role]
-    if state.get('control'):
+    if state.get('control') or state.get('pending_slow_decision'):
         # Recheck authority before any actual recovered start, excluding exactly
         # its own unstarted record/reservation. Other jobs and holds still count.
         transient = dict(state)
         transient.pop(pending_role, None)
         action = ('baseline' if pending['index'] == 0 else
                   {'action': 'propose', 'recipe': pending['proposal']['recipe']})
-        gate = check_action(state['control'], transient, action, None)
+        try:
+            gate = _authorize(transient, action) or {'allowed': True}
+        except ValueError as exc:
+            gate = {'allowed': False, 'reason': str(exc)}
         if not gate['allowed']:
             state['launch_block'] = {**gate, 'pending_role': pending_role}
             state['status'] = 'launch_blocked'
@@ -378,7 +384,7 @@ def next_proposal(campaign_dir):
         routing_state.pop(state['launch_block'].get('pending_role', 'launch_intent'), None)
     route = route_next_action(routing_state, state.get('control'), feedback)
     allowed = state['status'] == 'ready' and not state.get('frozen')
-    if state.get('control'):
+    if state.get('control') or state.get('pending_slow_decision'):
         allowed = allowed and route['action'] == 'propose' and not route.get('review_required')
     if state.get('active_health') == 'unknown':
         allowed = False
@@ -493,6 +499,85 @@ def finalize_campaign(campaign_dir):
         return state
 
 
+def _search_checkpoint_candidate(state):
+    result = get_result(state['frozen']['run_id'], state['config']['runs_dir'])
+    artifacts = result.get('artifacts', {})
+    if (result.get('status') != 'completed' or not result.get('valid') or
+            not artifacts.get('best_checkpoint') or not Path(artifacts['best_checkpoint']).is_file()):
+        raise ValueError('Frozen checkpoint is missing or invalid')
+    return {'kind': 'retain_search_checkpoint', 'run_id': state['frozen']['run_id'],
+            'runs_dir': state['config']['runs_dir'],
+            **{key: artifacts[key] for key in ('best_checkpoint', 'config_dir')},
+            'provenance': {key: state.get(key) for key in ('config', 'frozen', 'control')}}
+
+
+def _resolve_final_checkpoint(directory, state, confirmation_dir=None, *, freeze=True):
+    """Freeze once, retaining the search choice separately from final weights."""
+    if state.get('status') != 'finalized' or not state.get('frozen'):
+        raise ValueError('Finalize the DEV choice before resolving final checkpoint')
+    frozen = state.get('final_checkpoint_ref')
+    explicit = str(Path(confirmation_dir).resolve()) if confirmation_dir is not None else None
+    if frozen:
+        selected = frozen.get('confirmation_dir')
+        if explicit is not None and explicit != selected:
+            raise ValueError('Final checkpoint reference is immutable; cannot retarget it')
+        explicit = selected
+    receipts = state.get('confirmation_refs', [])
+    if not isinstance(receipts, list):
+        raise ValueError('Final checkpoint confirmation receipts must be a list')
+    try:
+        candidates = []
+        for receipt in receipts:
+            path = str(Path(receipt['confirmation_dir']).resolve())
+            if explicit is not None and path != explicit:
+                continue
+            manifest = json.loads((Path(path) / 'confirmation.json').read_text(encoding='utf-8'))
+            if manifest.get('association') != receipt:
+                raise ValueError('Final checkpoint confirmation association differs from parent')
+            if manifest.get('plan', {}).get('final_checkpoint_rule', {}).get('kind') == 'predeclared_seed':
+                candidates.append((path, receipt))
+            elif explicit is not None:
+                raise ValueError('Explicit final checkpoint confirmation must declare a seed')
+        if len(candidates) > 1:
+            raise ValueError('Final checkpoint confirmation selection is ambiguous; specify confirmation_dir')
+        if explicit is not None and not candidates:
+            raise ValueError('Final checkpoint confirmation is not registered with this campaign')
+        if frozen and frozen['kind'] == 'retain_search_checkpoint':
+            if candidates:
+                raise ValueError('Final checkpoint reference is immutable; cannot retarget it')
+            candidate = _search_checkpoint_candidate(state)
+        elif candidates:
+            from .confirmation import _final_checkpoint_candidate
+            candidate = _final_checkpoint_candidate(directory, state, *candidates[0])
+        else:
+            candidate = _search_checkpoint_candidate(state)
+    except (OSError, KeyError, TypeError) as exc:
+        raise ValueError('Final checkpoint evidence is missing or invalid: ' + str(exc)) from exc
+    if frozen:
+        if candidate != {key: value for key, value in frozen.items() if key != 'frozen_at'}:
+            raise ValueError('Final checkpoint identity or frozen provenance changed')
+        return frozen
+    if state.get('final_test'):
+        # Old retain-search attempts can be recovered without inventing a new
+        # frozen reference after TEST has started. Predeclared plans cannot.
+        if (not freeze and candidate['kind'] == 'retain_search_checkpoint' and
+                state['final_test'].get('run_id') == candidate['run_id']):
+            return candidate
+        raise ValueError('Final TEST already started; cannot freeze or retarget final checkpoint')
+    if not freeze:
+        return candidate
+    reference = {**candidate, 'frozen_at': _now()}
+    state['final_checkpoint_ref'] = reference
+    _save(directory, state)
+    return reference
+
+
+def resolve_final_checkpoint(campaign_dir, *, confirmation_dir=None):
+    """Resolve an authorized predeclared winner or retained search weight, without TEST."""
+    with _locked(campaign_dir) as directory:
+        return _resolve_final_checkpoint(directory, _read(directory), confirmation_dir)
+
+
 def _record_final_test_usage(state, report):
     if report.get('usage_recorded'):
         return
@@ -523,6 +608,12 @@ def _finish_controlled_test(directory, state, report, result):
         state['final_test'] = report
         _save(directory, state)
         return report
+    reference = state.get('final_checkpoint_ref')
+    if result.get('valid') and reference and any(
+            result.get('artifacts', {}).get(key) != reference[key]
+            for key in ('best_checkpoint', 'config_dir')):
+        result = {**result, 'valid': False,
+                  'error': 'Final TEST checkpoint identity differs from frozen reference'}
     report.update(status='completed' if result.get('valid') else 'failed',
                   valid=bool(result.get('valid')), usage=result.get('usage'), finished_at=_now())
     if result.get('valid'):
@@ -545,6 +636,10 @@ def _controlled_final_test(directory, state):
     output = Path(directory) / 'final_test'
     persisted = output / 'evaluation_result.json'
     previous = state.get('final_test')
+    reference = _resolve_final_checkpoint(directory, state, freeze=not bool(previous))
+    if previous and (previous.get('run_id') != reference['run_id'] or
+                     previous.get('final_checkpoint_ref', reference) != reference):
+        raise ValueError('Final TEST report checkpoint identity differs from frozen reference')
     if previous:
         if previous.get('status') in ('completed', 'failed'):
             return previous
@@ -555,17 +650,14 @@ def _controlled_final_test(directory, state):
             return _finish_controlled_test(directory, state, previous, result)
         raise ValueError('Final TEST evaluation liveness is unknown; inspect its artifacts, do not start another attempt')
     _authorize(state, 'final_test')
-    frozen = get_result(state['frozen']['run_id'], cfg['runs_dir'])
-    if not frozen.get('valid') or not Path(frozen['artifacts']['best_checkpoint']).is_file():
-        raise ValueError('Frozen checkpoint is missing or invalid')
     limits = {key: state['control']['limits'][key] for key in ('allocated_gpus', 'job_walltime_seconds')}
-    report = {'run_id': state['frozen']['run_id'], 'status': 'running', 'valid': False,
+    report = {'run_id': reference['run_id'], 'final_checkpoint_ref': reference, 'status': 'running', 'valid': False,
               'started_at': _now(), 'log': str(output / 'evaluation.log'),
               'reserved_gpu_hours': limits['allocated_gpus'] * limits['job_walltime_seconds'] / 3600}
     state['final_test'] = report
     _save(directory, state)
     try:
-        result = evaluate_frozen_checkpoint(cfg, frozen['artifacts'], cfg['test'], str(output),
+        result = evaluate_frozen_checkpoint(cfg, reference, cfg['test'], str(output),
                                             execution_limits=limits)
     except Exception as exc:
         result = (json.loads(persisted.read_text(encoding='utf-8')) if persisted.is_file() else
@@ -584,10 +676,11 @@ def final_test(campaign_dir):
         cfg = state['config']
         if not cfg.get('test'):
             raise ValueError('No test split configured')
-        result = get_result(state['frozen']['run_id'], cfg['runs_dir'])
-        checkpoint = Path(result['artifacts']['best_checkpoint'])
-        if not result['valid'] or not checkpoint.is_file():
-            raise ValueError('Frozen checkpoint is missing or invalid')
+        reference = _resolve_final_checkpoint(directory, state, freeze=not bool(state.get('final_test')))
+        previous = state.get('final_test')
+        if previous and (previous.get('run_id') != reference['run_id'] or
+                         previous.get('final_checkpoint_ref', reference) != reference):
+            raise ValueError('Final TEST report checkpoint identity differs from frozen reference')
         count = expected_count(cfg['test'])
         metrics_path = directory / 'final_test' / 'metrics.json'
         # Reuse only a completed, validated report, never an interrupted output directory.
@@ -595,10 +688,11 @@ def final_test(campaign_dir):
             metrics = json.loads(metrics_path.read_text(encoding='utf-8'))
             validate_metrics(metrics, count, cfg['eval_size'])
             return state['final_test']
-        command = _resolve_evaluation(evaluation_command(cfg, directory, split='test'), result['train_metrics'])
+        _authorize(state, 'final_test')
+        command = _resolve_evaluation(evaluation_command(cfg, directory, split='test'), reference)
         _write_json(directory / 'final_test_command.json', command)
         log_path = directory / 'final_test.log'
-        report = {'run_id': state['frozen']['run_id'], 'status': 'running', 'valid': False,
+        report = {'run_id': reference['run_id'], 'final_checkpoint_ref': reference, 'status': 'running', 'valid': False,
                   'command': command, 'log': str(log_path), 'started_at': _now()}
         state['final_test'] = report
         _save(directory, state)

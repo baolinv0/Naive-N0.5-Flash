@@ -491,6 +491,11 @@ def test_recovered_pending_intent_obeys_new_hold_then_resumes_same_request(tmp_p
     resolution.update(kind='resolution', action='diagnose', resolves_decision_id='new_hold',
                       resolution={'operational_issue': True, 'protocol_unchanged': True})
     record_research_decision(directory, resolution)
+    pending = campaign.next_proposal(directory)
+    assert pending['next_action']['action'] == 'diagnose' and not pending['proposal_allowed']
+    resume = decision_for(pending, patch, name='explicit_resume_resolution')
+    resume.update(kind='slow_review', trigger_id=pending['next_action']['trigger_id'])
+    record_research_decision(directory, resume)
     monkeypatch.setattr(campaign, 'start_prepared_run', real_start)
     final = campaign.wait_campaign(directory, timeout=15)
     assert final['trials'][-1]['run_id'] == prepared[0]
@@ -528,6 +533,11 @@ def test_recovered_prepared_active_obeys_hold_and_resumes_same_run_after_resolut
     resolution.update(kind='resolution', action='diagnose', resolves_decision_id='active_hold',
                       resolution={'operational_issue': True, 'protocol_unchanged': True})
     record_research_decision(directory, resolution)
+    pending = campaign.next_proposal(directory)
+    assert pending['next_action']['action'] == 'diagnose' and not pending['proposal_allowed']
+    resume = decision_for(pending, patch, name='explicit_resume_active_resolution')
+    resume.update(kind='slow_review', trigger_id=pending['next_action']['trigger_id'])
+    record_research_decision(directory, resume)
     monkeypatch.setattr(campaign, 'start_prepared_run', real_start)
     final = campaign.wait_campaign(directory, timeout=15)
     assert final['trials'][-1]['run_id'] == 'exp_002'

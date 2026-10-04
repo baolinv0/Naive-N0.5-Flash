@@ -17,9 +17,9 @@
 
 平均逐图 RGB DEV PSNR、`min_delta` 选优、raw best 和旧模式语义保持原有合同。PNG 供展示；Naive 的现有输入仍是文本，图片路径不会被算作视觉观察。
 
-## 完整回归
+## 原实施版本的完整回归
 
-最终运行结果：**266 passed，19 subtests passed，101.83 秒，0 失败**。18 个警告来自上游 matplotlib/colour-demosaicing 对依赖旧接口的使用。原始输出：[pytest.log](../evidence/fast_slow_cpu/pytest.log)。
+`c00c84c8` 所含原实施版本的运行结果：**266 passed，19 subtests passed，101.83 秒，0 失败**。这是历史记录，不是 2026-10-04 评审修复后的全量重跑结果。18 个警告来自上游 matplotlib/colour-demosaicing 对依赖旧接口的使用。原始输出：[pytest.log](../evidence/fast_slow_cpu/pytest.log)。本次修复、重新验证结果和运行环境限制见 [评审修复回应](../../review/Review_Fixes_2026-10-04_CN.md)。
 
 在 overlay 目录运行，官方 ISP 提供 overlay 不包含的 utils/models/loss_utils：
 

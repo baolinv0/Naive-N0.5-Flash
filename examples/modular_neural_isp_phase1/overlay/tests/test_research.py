@@ -242,63 +242,16 @@ def test_campaign_cost_reconciles_all_pools_and_rejects_negative_actual(tmp_path
     assert research.build_campaign_report(tmp_path)['cost']['gpu_hours'] == 'unavailable'
 
 
-def test_recognized_w_events_link_actual_runs_and_feedback_before_each_proposal(tmp_path):
-    from test_runner import config
-    from test_campaign import proposal
-    from tm_research.campaign import initialize_campaign, next_proposal, submit_proposal
-    directory = tmp_path / 'live_records'
-    current = initialize_campaign(config(tmp_path), directory, max_trials=4)
-    model, endpoint = 'Naive-N0.5-Flash', 'http://authorized-host:8000/v1'
-    def event(kind, run_id, d=None):
-        return {'schema_version': 1, 'event': kind, 'run_id': run_id,
-                'campaign_id': current['campaign_id'], 'model_id': model, 'executor_url': endpoint,
-                **({'decision_id': d['decision_id'], 'feedback_ref': d['feedback_ref'],
-                    'observation_refs': d['observation_refs']} if d else {})}
-    events = [event('run_completed', current['trials'][0]['run_id'])]
-    for index, patch in enumerate([{'loss_family': 'mse'}, {'optimizer': 'adamw'}, {'learning_rate': 0.00005}], 1):
-        evidence = next_proposal(directory)
-        f = evidence['feedback']
-        previous = current['trials'][-1]['run_id']
-        d = {**decision(), 'decision_id': f'live_decision_{index}', 'feedback_ref': f['feedback_ref'],
-             'latest_seen_run_id': previous, 'reference_run_ids': [previous], 'comparison_run_id': previous,
-             'observation_refs': [f'{current["campaign_id"]}/{previous}/{f["feedback_revision"]}/O1'],
-             'requested_change': patch}
-        events.append(event('feedback_consumed', previous, d))
-        current = submit_proposal(directory, proposal(evidence, patch), decision_ref=d)
-        events += [event('proposal_submitted', current['trials'][-1]['run_id'], d),
-                   event('run_completed', current['trials'][-1]['run_id'])]
-    service = {'schema_version': 1, 'kind': 'naive_adapter_live', 'model_id': model,
-               'weights_ref': 'authorized-model-weights', 'executor_url': endpoint,
-               'aris_version': 'recorded-version', 'inference_settings': {'temperature': 0},
-               'startup_record_ref': str(tmp_path / 'startup.json')}
-    (tmp_path / 'startup.json').write_text(json.dumps({'event': 'service_started',
-        **{key: service[key] for key in ('model_id', 'executor_url', 'weights_ref')}}))
-    (tmp_path / 'service.json').write_text(json.dumps(service))
-    transcript = tmp_path / 'transcript.jsonl'
-    transcript.write_text('\n'.join(json.dumps(item) for item in events))
-    current['workflow_evidence'] = {'kind': 'live_naive_aris', 'model_identity': model,
-        'run_ids': [trial['run_id'] for trial in current['trials']],
-        'transcript_ref': str(transcript), 'service_config_ref': str(tmp_path / 'service.json')}
-    (directory / 'campaign.json').write_text(json.dumps(current))
+def test_recognized_w_events_link_actual_runs_and_feedback_before_each_proposal(tmp_path, capsys):
+    # Engineering-only simulated load boundary, actual capture/register API.
+    # No manual campaign.workflow_evidence edits or authored accepted-event log.
+    from test_workflow import captured_campaign
+    directory, capture, service, current, provenance = captured_campaign(tmp_path, capsys)
     assert research.build_campaign_report(directory)['claims']['W']['status'] == 'accepted'
-    service['model_id'] = None
-    (tmp_path / 'service.json').write_text(json.dumps(service))
-    startup = json.loads((tmp_path / 'startup.json').read_text()); startup['model_id'] = None
-    (tmp_path / 'startup.json').write_text(json.dumps(startup))
-    current['workflow_evidence']['model_identity'] = None
-    (directory / 'campaign.json').write_text(json.dumps(current))
-    for item in events:
-        item['model_id'] = None
-    transcript.write_text('\n'.join(json.dumps(item) for item in events))
-    assert research.build_campaign_report(directory)['claims']['W']['status'] == 'pending'
-    service['model_id'] = startup['model_id'] = current['workflow_evidence']['model_identity'] = model
-    (tmp_path / 'service.json').write_text(json.dumps(service))
-    (tmp_path / 'startup.json').write_text(json.dumps(startup))
-    (directory / 'campaign.json').write_text(json.dumps(current))
-    for item in events:
-        item['model_id'] = model
+    transcript = Path(provenance['transcript_ref'])
+    events = [json.loads(line) for line in transcript.read_text().splitlines()]
     events[1], events[2] = events[2], events[1]
-    transcript.write_text('\n'.join(json.dumps(item) for item in events))
+    transcript.write_text('\n'.join(json.dumps(event) for event in events))
     assert research.build_campaign_report(directory)['claims']['W']['status'] == 'pending'
 
 

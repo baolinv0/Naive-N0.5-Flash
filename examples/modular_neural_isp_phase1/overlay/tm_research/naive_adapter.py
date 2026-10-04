@@ -138,7 +138,8 @@ def parse_assistant_text(raw, tools=(), *, starts_in_think=False, allow_tool_cal
     return content.strip(), calls
 
 
-def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_interval=10):
+def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_interval=10,
+                *, workflow_dir=None, host_version=None):
     """Build a server; generate yields text fragments or a final GenerationResult."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -160,6 +161,11 @@ def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_i
                 self.wfile.write(body)
                 return
 
+            started_ns = time.time_ns()
+            # Preserve decoded content only; never store HTTP authentication headers.
+            raw_request = json.loads(json.dumps({key: request[key] for key in (
+                'messages', 'tools', 'model', 'stream', 'temperature', 'top_p',
+                'max_tokens', 'max_completion_tokens') if key in request}))
             identifier = "chatcmpl-" + uuid4().hex
             created = int(time.time())
             self.send_response(200)
@@ -220,6 +226,16 @@ def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_i
                 self.wfile.write(b"data: " + json.dumps({"error": {"message": str(error)}}).encode() + b"\n\n")
                 self.wfile.flush()
                 return
+            if workflow_dir:
+                from .workflow import append_record
+                from pathlib import Path
+                append_record(Path(workflow_dir) / 'requests.jsonl', {
+                    'schema_version': 1, 'record_type': 'model_response',
+                    'producer': 'tm_research.naive_adapter', 'session_id': service['session_id'],
+                    'model_id': model_name, 'request_id': identifier, 'started_ns': started_ns,
+                    'finished_ns': time.time_ns(), 'request': raw_request,
+                    'raw_generation': ''.join(raw_parts), 'starts_in_think': starts_in_think,
+                    'response_content': content, 'tool_calls': calls, 'finish_reason': finish_reason})
             if content:
                 send({"content": content})
             for index, (name, arguments) in enumerate(calls):
@@ -230,7 +246,24 @@ def make_server(host, port, generate, model_name="Naive-N0.5-Flash", heartbeat_i
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
-    return ThreadingHTTPServer((host, port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
+    if workflow_dir:
+        from .workflow import start_service_capture, validate_loaded_identity
+        identity = getattr(generate, 'loaded_identity', None)
+        try:
+            if not host_version:
+                raise ValueError('--host-version is required with --workflow-dir')
+            if identity is not None:
+                identity = validate_loaded_identity(identity)
+            service = start_service_capture(workflow_dir, server, model_id=model_name,
+                weights_ref=identity['model_path'] if identity is not None else model_name,
+                host_version=host_version,
+                loaded_identity=identity if identity is not None else {'generator': 'injected engineering fixture'},
+                evidence_mode='live' if identity is not None else 'engineering_fixture')
+        except Exception:
+            server.server_close()
+            raise
+    return server
 
 
 def transformers_generator(model_id):
@@ -269,6 +302,9 @@ def transformers_generator(model_id):
         yield GenerationResult(tokenizer.decode(generated_ids, skip_special_tokens=False),
                                finish_reason, starts_in_think)
 
+    generate.loaded_identity = {'model_class': type(model).__name__,
+        'tokenizer_class': type(tokenizer).__name__, 'model_path': model_id,
+        'revision': getattr(getattr(model, 'config', None), '_commit_hash', None)}
     return generate
 
 
@@ -277,8 +313,11 @@ def main():
     parser.add_argument("--model-id", default="NaiveAI/Naive-N0.5-Flash-FP8")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument('--workflow-dir', help='New directory for startup and raw generation evidence')
+    parser.add_argument('--host-version', help='Installed ARIS host version, recorded with evidence')
     args = parser.parse_args()
-    server = make_server(args.host, args.port, transformers_generator(args.model_id), args.model_id)
+    server = make_server(args.host, args.port, transformers_generator(args.model_id), args.model_id,
+                         workflow_dir=args.workflow_dir, host_version=args.host_version)
     print(f"Naive Chat Completions at http://{args.host}:{args.port}/v1", flush=True)
     try:
         server.serve_forever()

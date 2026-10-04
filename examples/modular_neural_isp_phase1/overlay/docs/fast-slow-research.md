@@ -57,7 +57,19 @@ python -m tm_research.cli run stop --run exp_002 --runs-dir runs --reason 'Autho
 python -m tm_research.cli campaign wait --campaign-dir campaigns/pilot --timeout 60
 ```
 
-Review is event-triggered, not a second resident runtime. `review_required` is separate from the action vocabulary (`wait`, `diagnose`, `propose`, `finalize`, `confirm`, `request_scope_change`, `report_stop`). A handled trigger does not repeatedly request review. Record slow decisions independently even when no training follows. Protocol suspicion establishes `research_hold`; only new diagnostic evidence demonstrating an operational issue with unchanged protocol can resolve it. A new scientific protocol needs a new authorized campaign. Clearing a hold never overrides hard stops, frozen selection or budgets.
+Review is event-triggered, not a second resident runtime. `review_required` is separate from the action vocabulary (`wait`, `diagnose`, `propose`, `finalize`, `confirm`, `request_scope_change`, `report_stop`). Recording a slow decision also persists its action in `pending_slow_decision`; a recorded review alone never reopens proposals. Record slow decisions independently even when no training follows.
+
+| Recorded action | Subsequent control state |
+|---|---|
+| `diagnose` / `wait` | Keep the pending diagnosis/pause; collect existing work, but do not launch another job. |
+| `request_scope_change` | Wait for a new authorized campaign; a decision cannot enlarge the current contract. |
+| `report_stop` | Stop search persistently. Explicit freezing and already authorized post-freeze confirmation remain possible. |
+| `finalize` | Keep proposals blocked until `campaign finalize` explicitly freezes the candidate. |
+| `propose` | Resume only through a slow review matching the current trigger, within existing bounds. |
+
+Use the current `next_action.trigger_id` for a continuation review. An ordinary fast proposal, a stale trigger, or replaying an old decision cannot clear a pending diagnosis. A stop or scope-change decision cannot be overwritten to restart search. Protocol suspicion separately establishes `research_hold`; only new diagnostic evidence demonstrating an operational issue with unchanged protocol can resolve it. Resolving a hold with action `diagnose` leaves diagnosis pending; explicitly record a matching continuation review if continuation is justified. Clearing a hold never overrides hard stops, frozen selection or budgets. Prepared-run recovery uses the same current action gate.
+
+If work is already queued, the continuation's `requested_change` must match its immutable proposal recipe patch. A different new slow-review action cannot replace a pending terminal action (`report_stop`, `request_scope_change` or `finalize`): recording fails before writing state, snapshot or decision log. Use a `closure` record for additional analysis without changing that control state; explicit freezing remains a separate action.
 
 A wait timeout bounds the caller, not the worker. Resume the same saved active run. A confirmed never-started prepared run can start once after current authorization, holds, resource/activity and hard-stop checks. A new hold leaves its exact pending request and reservation intact with a reviewable blocked status; proper resolution resumes the same identity. An unknown worker identity blocks another launch and retains its reservation. Stop requests target actual work but remain requests until exit is confirmed. Interrupted jobs preserve partial artifacts and become invalid, with existing baseline and stop behavior. There is no optimizer/RNG resume or automatic retry of identical experiments.
 
@@ -80,7 +92,17 @@ Independent confirmation freezes scene evidence from authorized development and 
 
 Reports distinguish W (live workflow), Q (recipe evidence), R (research strategy) and P (product evidence), including unavailable costs and unverified visual claims. Synthetic subprocess tests establish engineering behavior only. Live Naive/ARIS transcript, actual GPU/data authorization, real paired seeds and independent confirmation remain pending until collected. No confirmed quality gain, superiority of this strategy, camera generalization or TM-only attribution follows from these implementation tests.
 
+For actual host capture and deterministic W evidence registration, follow [workflow-evidence.md](workflow-evidence.md). Keep original adapter/session and CLI tool-result records. Register through the CLI rather than editing `campaign.json` or writing a success event index. Registration does not itself establish W: service identity, model output, consumed feedback and actual submitted/completed runs must agree and retain their order.
+
 
 ## Authorized final held-out evaluation
 
 The current pilot keeps `test_permission: false`. For an already authorized control campaign with permission true, `final-test --campaign-dir <campaign>` runs one bounded checkpoint evaluation after freezing. Its walltime and actual allocated-GPU usage are recorded, including failure cost; terminal success or failure is returned on repeated calls. A host interrupted after the evaluator saved its terminal result recovers that same result. An invalid receipt alone does not establish exit: the evaluator state must be terminal and recorded resources stopped before collection releases the attempt. `recovery_required` retains the cross-stage activity block and reservation even with zero allocated GPUs. Both confirmation and final TEST adopt the same watchdog-recovered terminal receipt and updated cost without a duplicate evaluation. If liveness remains unknown, another evaluation is refused. Legacy campaigns retain their existing explicit final-test behavior. Never use held-out results to resume recipe search or relabel TEST as an independent confirmation split.
+
+The default `retain_search_checkpoint` retains the frozen search weight. For an authorized `predeclared_seed` plan, resolve the completed declared winner into immutable `final_checkpoint_ref` before final evaluation. Missing/failed declared tasks do not fall back to search weights; multiple candidate confirmation plans require explicit selection. Report, memory and final evaluation use the same reference. Once selected or a final evaluation has started, another seed or checkpoint cannot replace it. Selecting a checkpoint does not grant TEST permission or read TEST.
+
+```bash
+python -m tm_research.cli campaign final-checkpoint --campaign-dir campaigns/pilot --confirmation-dir campaigns/pilot/confirmation
+```
+
+Reporting is read-only: a completed confirmation candidate is distinct from an adopted final checkpoint until the explicit selection step above. Omitting `--confirmation-dir` resolves only an unambiguous registered predeclared plan, or the default search checkpoint when no such plan exists.

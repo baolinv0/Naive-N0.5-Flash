@@ -198,6 +198,20 @@ def _usage(control, state, usage, exclude_confirmation=None):
             'ledger': ledger}
 
 
+def pending_decision_reason(state, action):
+    """Apply an explicitly recorded slow intent without inferring authorization."""
+    name = action.get('action') if isinstance(action, dict) else action
+    if name not in ('baseline', 'propose', 'search', 'calibrate', 'confirm', 'final_test'):
+        return None
+    pending_action = (state.get('pending_slow_decision') or {}).get('action')
+    if pending_action and pending_action != 'propose':
+        search = name in ('baseline', 'propose', 'search', 'calibrate')
+        if (search or pending_action in ('diagnose', 'wait', 'request_scope_change')
+                or (pending_action == 'finalize' and not state.get('frozen'))):
+            return 'Pending slow decision requires ' + pending_action
+    return None
+
+
 def check_action(control, state, action, usage=None, *, exclude_confirmation=None):
     """Return a gate, never authorization or an execution command.
 
@@ -226,6 +240,10 @@ def check_action(control, state, action, usage=None, *, exclude_confirmation=Non
         return result(False, 'An active or unknown job prevents another start')
     if state.get('research_hold'):
         return result(False, 'Research hold requires evidence-resolved diagnosis')
+    pending_reason = pending_decision_reason(state, name)
+    if pending_reason:
+        return result(False, pending_reason,
+                      (state.get('pending_slow_decision') or {}).get('action') == 'request_scope_change')
     if name in ('baseline', 'propose', 'search'):
         if state.get('frozen') or state.get('stop_reason') or state.get('status') in ('stopped', 'finalized'):
             return result(False, 'Frozen or hard-stopped search cannot continue')
