@@ -65,7 +65,7 @@ python -m tm_research.cli campaign finalize --campaign-dir campaigns/pilot
 python -m tm_research.cli final-test --campaign-dir campaigns/pilot
 ```
 
-先冻结候选，再单独运行 test。日常研究 prompt 不包含测试分数。多 seed 统计和仅 GTM/LTM 更新的归因实验属于后续阶段，当前不声称已确认 PSNR 提升。
+先冻结候选，再单独运行 test。日常研究 prompt 不包含测试分数。可选确认模块对冻结 baseline/winner 进行配对 seed 复训；仅 GTM/LTM 更新的归因实验仍是独立任务，当前不声称已确认 PSNR 提升。
 
 ## 原始全 ISP 推理
 
@@ -80,3 +80,10 @@ python -m tm_research.cli final-test --campaign-dir campaigns/pilot
 - [上一阶段历史验证](docs/verification.md)
 
 源码及模型许可遵循原仓库 LICENSE.md。
+
+
+## 可选快慢科研模式
+
+新增 `campaign init --control ... --profile ...`、提交时独立 `--decision ...`、版本化逐图反馈、事件触发的复盘及冻结配方确认。科学 YAML、严格三键 proposal 和原有选优阈值保持兼容。作业先 prepare，再保存 active 引用，再启动；未知活性禁止重复训练，确认/校准预算预留，诊断失败不覆盖有效 DEV 分数。
+
+可执行命令和授权模板见 [fast-slow-research.md](docs/fast-slow-research.md)。模板中的空资源不是授权；真实数据/GPU、Naive＋ARIS transcript、多 seed 收益和独立泛化证据仍待实际运行。合成测试只验证工程行为。

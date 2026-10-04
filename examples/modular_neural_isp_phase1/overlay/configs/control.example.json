@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "campaign_id": "replace_with_campaign_identity",
+  "parent_campaign_id": null,
+  "question": null,
+  "authorization_ref": null,
+  "source_revision": null,
+  "approved_config_ref": null,
+  "protocol_id": "P512",
+  "primary_metric": "mean_per_image_rgb_psnr",
+  "allowed_recipe_fields": ["loss_family", "optimizer", "learning_rate", "weight_decay"],
+  "limits": {
+    "job_walltime_seconds": null,
+    "total_gpu_hours": null,
+    "allocated_gpus": null,
+    "max_search_trials": null,
+    "confirmation_gpu_hours": null,
+    "calibration_gpu_hours": null
+  },
+  "slow_policy": {"consecutive_valid_no_gain": 2},
+  "confirmation_scope": {"authorized": false, "kind": "none"},
+  "test_permission": false,
+  "observation_mode": "text",
+  "observation_config": {"required_for_proposal": ["sample_alignment", "config_diff", "per_image_comparison", "text_summary"]}
+}

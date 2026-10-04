@@ -41,9 +41,10 @@ Pilot acceptance requires four valid, actually executed trials and the transcrip
 ## Delegation policy for the live pilot
 
 This section governs the steps above. It is an operator/ARIS policy, not a new
-controller feature or a security boundary. The CLI validates recipes, citations,
-run validity and DEV selection; it does not enforce human approval, compute caps,
-or the scientific meaning of a hypothesis. Do not claim otherwise.
+controller feature or a security boundary. Legacy mode validates recipes, citations, run validity and DEV selection. The opt-in
+`--control` mode additionally checks explicit authorization/resource boundaries and
+requires independent decision sidecars. Neither mode judges the scientific meaning
+of a hypothesis or prevents arbitrary shell bypass. See the new-mode workflow below.
 
 Rationale: Shao et al., [Human–AI Collaboration at Scale](https://www.alphaxiv.org/abs/2608.human-ai-collaboration-at-scale.pdf),
 sections 3–5, distinguish task criticality (reversibility, visibility, impact),
@@ -101,8 +102,8 @@ as superseded. Do not repair a disappointing score by changing what is measured.
 ### 4. Preserve useful friction; bound mechanical recovery
 
 A timeout means inspect/wait for the existing run, not submit another.
-One operational repair attempt per incident is allowed within existing caps,
-only if it leaves the scientific protocol unchanged. Repeated identical failure,
+Operational repair is allowed within existing caps when new diagnostic evidence
+supports it and the scientific protocol remains unchanged. Repeated identical failure,
 unknown execution state, or insufficient remaining compute pauses new launches.
 Never bypass duplicate-recipe rejection, edit campaign state, or extend trial
 limits to obtain four valid runs. Invalid trials still consume the existing
@@ -123,7 +124,7 @@ Leave TEST untouched in this pilot, including images, labels, metrics and manual
 script calls. Outside this pilot, a previously explicit authorization for final
 held-out evaluation suffices: record it and freeze the DEV choice before
 `final-test`; no redundant approval is needed. Otherwise request it once.
-The CLI freeze check alone is not authorization. Once TEST is observed, do not
+In legacy mode the CLI freeze check alone is not authorization; control mode also checks the frozen TEST permission. Once TEST is observed, do not
 use it to select recipes or present that same set as fresh confirmation after
 further tuning. Record accidental exposure and ask the operator for a new
 held-out evaluation plan.
@@ -154,3 +155,12 @@ Pause the affected action, continue safe read-only preparation, and resume only
 within the recorded authorization. End the pilot with the operator reviewing
 one rejected hypothesis and one unresolved alternative explanation, so execution
 also develops research judgment.
+
+
+## Opt-in fast/slow workflow
+
+Follow [fast-slow-research.md](fast-slow-research.md) when the operator supplies a control contract. Initialize using `--control` and an optional frozen `--profile`; do not add these policy fields to training YAML. Read `next.feedback`, cite measured observation IDs separately from competing hypotheses, and submit the unchanged proposal with `--decision`. A historical `based_on` or explicit comparator never changes partial-recipe inheritance from effective best or fixed initialization.
+
+Use `next.next_action` and `review_required`: wait for active work, diagnose missing required feedback, invoke a slow review only for its event, or close/confirm within scope. Save slow outcomes with `campaign record-decision` even if no run follows. Resolving an operational hold requires new evidence and cannot enlarge search limits. Use `campaign feedback`, `review-packet`, `report` and `memory` for reviewable evidence; never invent measurements, scene tags, costs or visual access.
+
+After freezing, run only the already authorized confirmation plan through `confirmation init/next/report`. Original DEV still chooses checkpoints; independent data are evaluated after freeze and TEST is never relabeled. Preserve every failed/incomplete seed pair. Report workflow, recipe, strategy and product claims separately. Current implementation tests do not complete the live pilot described above.

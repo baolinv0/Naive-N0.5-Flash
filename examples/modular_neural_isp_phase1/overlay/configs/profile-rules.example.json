@@ -1,0 +1,11 @@
+{
+  "profile_revision": "p001",
+  "threshold_source": "TRAIN",
+  "splits": ["TRAIN", "DEV"],
+  "calibration_quantiles": [0.3333333333333333, 0.6666666666666666],
+  "fraction_high": 0.25,
+  "win_tolerance_db": 0.0,
+  "small_group_images": 5,
+  "roi": false,
+  "retrospective": false
+}

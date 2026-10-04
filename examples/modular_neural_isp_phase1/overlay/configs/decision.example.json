@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "decision_id": "replace_with_unique_decision_id",
+  "kind": "fast_proposal",
+  "feedback_ref": null,
+  "latest_seen_run_id": null,
+  "reference_run_ids": [],
+  "observation_refs": [],
+  "observation": null,
+  "prediction": null,
+  "falsifier": null,
+  "alternative_explanation": null,
+  "action": "propose",
+  "requested_change": {},
+  "claim_scope": "exploratory_dev"
+}

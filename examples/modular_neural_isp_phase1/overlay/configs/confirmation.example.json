@@ -1,0 +1,9 @@
+{
+  "seeds": [],
+  "replicates": 1,
+  "budget_gpu_hours": null,
+  "delta_useful_db": null,
+  "scope": {"kind": "original_dev"},
+  "failure_policy": "preserve_no_retry",
+  "final_checkpoint_rule": {"kind": "retain_search_checkpoint"}
+}
