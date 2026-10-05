@@ -369,6 +369,169 @@ def test_baseline_groups_are_not_applicable_instead_of_permanent_hold(campaign):
     assert result['section_applicability']['groups'] == 'not_applicable'
 
 
+@pytest.mark.parametrize('profile_value', [None, '{broken', {},
+    [], {'samples': [{'sample_id': f's{i}', 'split': 'DEV', 'tags': 'fixed'} for i in range(8)]},
+    {'samples': [{'sample_id': f's{i}', 'split': 'DEV', 'tags': None} for i in range(8)]},
+    {'samples': [{'sample_id': f's{i}', 'split': 'DEV'} for i in range(8)]},
+    {'samples': [{'sample_id': f's{i}', 'split': 'DEV', 'tags': ['unknown']} for i in range(8)]}])
+def test_required_groups_need_usable_profile_labels(campaign, profile_value):
+    root, _, state = campaign
+    path = root / 'profile.json'
+    if isinstance(profile_value, str):
+        path.write_text(profile_value)
+    elif profile_value is not None:
+        dump(path, profile_value)
+    state.update(profile_ref=str(path), control={'observation_config': {'required_for_proposal': ['groups']}})
+    dump(root / 'campaign.json', state)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['quality']['valid'] is True
+    assert result['overall']['dev_psnr'] == state['trials'][-1]['dev_psnr']
+    assert result['comparisons']['comparison']['status'] == 'complete'
+    assert result['section_status']['groups'] is False
+    assert result['proposal_ready'] is False
+    assert result['missing_required'] == ['groups']
+
+
+def test_required_groups_accept_complete_declared_group_evidence(campaign):
+    root, _, state = campaign
+    dump(root / 'profile.json', {'samples': [
+        {'sample_id': f's{i}', 'split': 'DEV', 'tags': ['fixed']} for i in range(8)]})
+    state.update(profile_ref='profile.json', control={'observation_config': {'required_for_proposal': ['groups']}})
+    dump(root / 'campaign.json', state)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['groups']['fixed']['status'] == 'complete'
+    assert result['groups']['fixed']['n_images'] == 8
+    assert result['section_status']['groups'] is True
+    assert result['proposal_ready'] is True
+
+
+def frozen_group_profile(root, state, *, roi=False):
+    from tm_research.diagnostics import diagnostics_snapshot, evaluation_transform
+    path = root / 'profile.json'
+    profile = {'profile_ref': str(path), 'profile_revision': 'p001', 'source': 'explicit',
+               'eval_size': 512, 'transform': evaluation_transform(512),
+               'rules': {'win_tolerance_db': 0.0},
+               'split_roots': {'DEV': {'input_dir': '/dev', 'gt_dir': '/gt', 'metadata_dir': '/meta'}},
+               'samples': [{'sample_id': f's{i}', 'split': 'DEV', 'tags': ['fixed']} for i in range(8)]}
+    if roi:
+        profile['roi_profile_ref'] = str(root / 'roi_profile.json')
+        dump(Path(profile['roi_profile_ref']), {
+            'profile_identity': {key: profile[key] for key in
+                                 ('profile_ref', 'profile_revision', 'source', 'transform', 'rules', 'split_roots', 'samples')},
+            'metric_config': {'metrics': ['mse'], 'lowpass_sigma': 1.0},
+            'samples': [{'sample_id': 's0', 'mask_definitions': {'all': {'row_spans': [[0, 0, 10]]}}}],
+            'roi_inventory': [{'sample_id': 's0', 'roi_id': 'all', 'metric_name': 'mse'}]})
+    dump(path, profile)
+    state['profile_ref'] = str(path)
+    state['trials'][-1]['observation_config'] = {'profile_ref': str(path),
+                                               'profile_snapshot': diagnostics_snapshot(profile)}
+    dump(root / 'campaign.json', state)
+    return path, profile
+
+
+def test_profile_reference_alone_does_not_establish_prelaunch_content(campaign):
+    root, _, state = campaign
+    path, _ = frozen_group_profile(root, state)
+    state['trials'][-1]['observation_config'] = {'profile_ref': str(path)}
+    dump(root / 'campaign.json', state)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['provenance']['profile_available_at_run'] is False
+    assert result['provenance']['retrospective'] is True
+
+
+def test_matching_frozen_launch_profile_establishes_prelaunch_content(campaign):
+    root, _, state = campaign
+    frozen_group_profile(root, state)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['provenance']['profile_available_at_run'] is True
+    assert result['provenance']['retrospective'] is False
+
+
+@pytest.mark.parametrize('change', ['revision', 'rules', 'labels', 'source', 'transform', 'roots'])
+def test_same_path_profile_rewrite_is_retrospective_and_preserves_old_feedback(campaign, change):
+    root, _, state = campaign
+    path, profile = frozen_group_profile(root, state)
+    first = evidence().build_run_feedback(root, 'exp_003')
+    original = Path(first['feedback_ref']).read_bytes()
+    if change == 'revision': profile['profile_revision'] = 'p002'
+    if change == 'rules': profile['rules']['win_tolerance_db'] = 0.5
+    if change == 'labels': profile['samples'][0]['tags'] = ['relabelled']
+    if change == 'source': profile['source'] = 'TRAIN'
+    if change == 'transform': profile['transform']['loader'] = 'changed_loader'
+    if change == 'roots': profile['split_roots']['DEV']['input_dir'] = '/different-dev'
+    dump(path, profile)
+    second = evidence().build_run_feedback(root, 'exp_003')
+    assert second['feedback_revision'] == 'r002'
+    assert Path(first['feedback_ref']).read_bytes() == original
+    assert second['provenance']['profile_available_at_run'] is False
+    assert second['provenance']['retrospective'] is True
+    assert all(obs['retrospective'] for obs in second['observations'] if obs['comparison_run_id'] is not None)
+    assert second['quality']['valid'] is True
+    assert second['overall']['dev_psnr'] == state['trials'][-1]['dev_psnr']
+
+
+def test_same_path_roi_definition_rewrite_is_retrospective(campaign):
+    root, _, state = campaign
+    _, profile = frozen_group_profile(root, state, roi=True)
+    first = evidence().build_run_feedback(root, 'exp_003')
+    roi_path = Path(profile['roi_profile_ref'])
+    roi = json.loads(roi_path.read_text())
+    roi['metric_config']['lowpass_sigma'] = 5.0
+    dump(roi_path, roi)
+    second = evidence().build_run_feedback(root, 'exp_003')
+    assert second['feedback_revision'] != first['feedback_revision']
+    assert second['provenance']['profile_available_at_run'] is False
+    assert second['provenance']['retrospective'] is True
+
+
+def test_runtime_snapshot_cannot_upgrade_reference_only_launch(campaign):
+    root, runs, state = campaign
+    path, _ = frozen_group_profile(root, state)
+    snapshot = state['trials'][-1]['observation_config'].pop('profile_snapshot')
+    dump(runs / 'exp_003/dev/diagnostics_snapshot.json', snapshot)
+    dump(root / 'campaign.json', state)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['provenance']['profile_available_at_run'] is False
+    assert result['provenance']['retrospective'] is True
+
+
+def test_conflicting_runtime_snapshot_does_not_claim_prelaunch_profile_coherence(campaign):
+    root, runs, state = campaign
+    frozen_group_profile(root, state)
+    snapshot = json.loads(json.dumps(state['trials'][-1]['observation_config']['profile_snapshot']))
+    snapshot['rules']['win_tolerance_db'] = 0.9
+    dump(runs / 'exp_003/dev/diagnostics_snapshot.json', snapshot)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['provenance']['profile_available_at_run'] is False
+    assert result['provenance']['retrospective'] is True
+
+
+@pytest.mark.parametrize('contents', ['{truncated', 'null'])
+def test_unreadable_present_runtime_snapshot_is_not_treated_as_absent(campaign, contents):
+    root, runs, state = campaign
+    frozen_group_profile(root, state)
+    path = runs / 'exp_003/dev/diagnostics_snapshot.json'
+    path.write_text(contents)
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['quality']['valid'] is True
+    assert result['comparisons']['comparison']['status'] == 'complete'
+    assert result['provenance']['profile_available_at_run'] is False
+    assert result['provenance']['retrospective'] is True
+
+
+def test_malformed_roi_csv_does_not_hide_conflicting_runtime_snapshot(campaign):
+    root, runs, state = campaign
+    frozen_group_profile(root, state)
+    snapshot = json.loads(json.dumps(state['trials'][-1]['observation_config']['profile_snapshot']))
+    snapshot['profile_revision'] = 'p002'
+    dump(runs / 'exp_003/dev/diagnostics_snapshot.json', snapshot)
+    csv_rows(runs / 'exp_003/dev/roi_metrics.csv', [{'sample_id': 's0', 'value': 'broken'}])
+    result = evidence().build_run_feedback(root, 'exp_003')
+    assert result['quality']['valid'] is True
+    assert result['comparisons']['comparison']['status'] == 'complete'
+    assert result['provenance']['profile_available_at_run'] is False
+
+
 def test_missing_revision_detail_repairs_new_revision_and_missing_read_is_explicit(campaign):
     root, _, _ = campaign
     first = evidence().build_run_feedback(root, 'exp_003')

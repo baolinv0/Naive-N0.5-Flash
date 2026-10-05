@@ -98,33 +98,46 @@ class EchoModel:
     return {'output': images}
 
 
-def test_validation_score_does_not_depend_on_batch_partition():
-  images = torch.tensor([0.01, 0.1, 0.2], dtype=torch.float32).view(3, 1, 1, 1).expand(-1, 3, 2, 2)
+@pytest.mark.parametrize('family', ['mse', 'l1'])
+def test_validation_score_and_loss_do_not_depend_on_batch_partition(family):
+  images = torch.tensor([0.1, 0.1, 0.9], dtype=torch.float32).view(3, 1, 1, 1).expand(-1, 3, 2, 2)
   results = []
   for sizes in ([3], [2, 1], [1, 1, 1]):
     batches = [{'in_images': part.unsqueeze(0), 'gt_images': torch.zeros_like(part).unsqueeze(0)}
                for part in images.split(sizes)]
-    results.append(validate(EchoModel(), batches, torch.device('cpu'), PixelLoss('mse'), None, 0))
+    results.append(validate(EchoModel(), batches, torch.device('cpu'), PixelLoss(family), None, 0))
   assert [result['num_images'] for result in results] == [3, 3, 3]
   assert all(result['finite'] for result in results)
   assert all(result['mean_per_image_psnr'] == results[0]['mean_psnr'] for result in results)
+  expected_loss = images.square().mean().item() if family == 'mse' else images.abs().mean().item()
+  assert [result[family] for result in results] == pytest.approx([expected_loss] * 3)
+  assert [result['total'] for result in results] == pytest.approx([expected_loss] * 3)
 
 
 def test_incomplete_cache_is_rebuilt_and_completed_cache_is_reused(tmp_path, monkeypatch):
   calls = []
+  from PIL import Image
+
+  raw, gt, meta = (tmp_path / name for name in ('raw', 'gt', 'data'))
+  for folder in (raw, gt, meta):
+    folder.mkdir()
+  Image.fromarray(np.zeros((4, 4, 3), np.uint8)).save(raw / 'scene.png')
+  Image.fromarray(np.zeros((4, 4, 3), np.uint8)).save(gt / 'scene.jpg')
+  (meta / 'scene.json').write_text(json.dumps({'cam_illum': [1, 1, 1], 'ccm': np.eye(3).tolist()}))
+  original_create = Data._create_hdf5_files
 
   def create(data):
     calls.append(data._temp_dir)
-    data._write_hdf5(0, [np.zeros((4, 4, 3), np.float32)], [np.zeros((4, 4, 3), np.float32)])
+    original_create(data)
     if len(calls) == 1:
       raise RuntimeError('interrupted preprocessing')
 
   monkeypatch.setattr(Data, '_create_hdf5_files', create)
-  kwargs = dict(in_img_dir=str(tmp_path / 'raw'), gt_img_dir=str(tmp_path / 'gt'),
+  kwargs = dict(in_img_dir=str(raw), gt_img_dir=str(gt), data_dir=str(meta),
                 image_size=4, batch_size=1)
   with pytest.raises(RuntimeError, match='interrupted'):
     Data(**kwargs)
-  cache = tmp_path / 'ps_temp_h5_gt_bs_1_sz_4'
+  cache = Path(calls[0])
   assert not (cache / 'COMPLETE').exists()
   assert len(Data(**kwargs)) == 1
   assert (cache / 'COMPLETE').exists()
@@ -166,7 +179,7 @@ def test_independent_evaluation_matches_cached_validation(tmp_path, eval_size):
     handle.close()
 
 
-def test_validation_divides_by_number_of_batches():
+def test_validation_keeps_constant_original_loss_components():
   class Model:
     def eval(self):
       pass

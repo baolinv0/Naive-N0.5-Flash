@@ -105,10 +105,14 @@ def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: st
     lsrgb_img, gt_img = load_image_pair(in_file, gt_file, data_file, image_size=eval_size,
                                        quarter=quarter_resolution)
     lsrgb_img_tensor = img_to_tensor(lsrgb_img).unsqueeze(0).to(device=te_device, dtype=torch.float32)
+    if te_device.type == 'cuda':
+      torch.cuda.synchronize(te_device)
     start = time.time()
     with torch.no_grad():
       out_img_tensor = model(lsrgb_img_tensor, post_process_ltm=post_process_ltm,
                              training_mode=eval_size is not None)['output']
+    if te_device.type == 'cuda':
+      torch.cuda.synchronize(te_device)
     end = time.time()
     elapsed = end - start
     total_time += elapsed

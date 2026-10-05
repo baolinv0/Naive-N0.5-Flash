@@ -244,7 +244,12 @@ def _diagnostics_snapshot(root, state, trial, sources):
     ref = (trial.get('artifacts') or {}).get('diagnostics_snapshot_ref') or metrics.get('diagnostics_snapshot_ref')
     path = _path(directory, ref) if ref else directory / 'dev/diagnostics_snapshot.json'
     sources[str(path)] = path.read_text(encoding='utf-8') if path.is_file() else None
-    return _read(path)
+    if sources[str(path)] is None:
+        return None
+    snapshot = json.loads(sources[str(path)])
+    if not isinstance(snapshot, dict):
+        raise ValueError('runtime diagnostics snapshot must be an object')
+    return snapshot
 
 
 def _compare_roi(candidate, reference, current_snapshot=None, prior_snapshot=None, profile_ref=None):
@@ -514,7 +519,7 @@ def build_run_feedback(campaign_dir, run_id):
 
 
 def _build(root, run_id, base):
-    from .diagnostics import compare_per_image
+    from .diagnostics import compare_per_image, diagnostics_snapshot
     state = _read(root / 'campaign.json')
     trial = next((trial for trial in state['trials'] if trial['run_id'] == run_id), None)
     if trial is None:
@@ -527,19 +532,41 @@ def _build(root, run_id, base):
     sources = {}
     unavailable = []
     diagnostics_failed = False
+    current_profile_snapshot = None
     if profile_ref:
         path = _path(root, profile_ref)
         if path.is_dir():
             path /= 'profile.json'
-        sources[str(path)] = path.read_text(encoding='utf-8') if path.is_file() else None
-        profile = _read(path, {})
+        try:
+            sources[str(path)] = path.read_text(encoding='utf-8') if path.is_file() else None
+            profile = json.loads(sources[str(path)]) if sources[str(path)] is not None else {}
+            if not isinstance(profile, dict) or not isinstance(profile.get('samples', []), list):
+                raise ValueError('profile must be an object with a sample list')
+            if any(not isinstance(sample, dict) or not isinstance(sample.get('sample_id'), str)
+                   or not sample['sample_id'] for sample in profile.get('samples', [])):
+                raise ValueError('profile samples require nonempty sample_id values')
+            if any(not isinstance(sample.get('tags', []), list)
+                   or any(not isinstance(tag, str) or not tag for tag in sample.get('tags', []))
+                   for sample in profile.get('samples', [])):
+                raise ValueError('profile group tags must be lists of nonempty strings')
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            profile = {}
+            unavailable.append(f'profile unavailable: {exc}')
         if not profile:
             unavailable.append('profile unavailable')
+        try:
+            current_profile_snapshot = diagnostics_snapshot(profile)
+        except (OSError, ValueError, TypeError, KeyError):
+            pass  # Legacy labels can describe retrospective groups, without prelaunch proof.
     elif (root / 'data_manifest.json').is_file():
         profile = load_manifest(root / 'data_manifest.json')
         sources[str(root / 'data_manifest.json')] = (root / 'data_manifest.json').read_text(encoding='utf-8')
     if not profile.get('samples'):
         unavailable.append('profile groups/scenes unavailable: unknown labels')
+    declared_group_tags = {tag for sample in profile.get('samples', [])
+                           if str(sample.get('split', 'DEV')).upper() in ('DEV', 'VALIDATION')
+                           for tag in sample.get('tags', [])
+                           if isinstance(tag, str) and tag and tag.lower() != 'unknown'}
     records = {}
     history = []
     history_configs = []
@@ -580,10 +607,14 @@ def _build(root, run_id, base):
         if item.get('valid'):
             try:
                 roi_records[item['run_id']] = _roi_rows(root, state, item, sources)
-                diagnostic_snapshots[item['run_id']] = _diagnostics_snapshot(root, state, item, sources)
-            except (ValueError, KeyError, TypeError) as exc:
+            except (OSError, ValueError, KeyError, TypeError) as exc:
                 roi_records[item['run_id']] = None
                 unavailable.append(f'ROI {item["run_id"]}: {exc}')
+            try:
+                diagnostic_snapshots[item['run_id']] = _diagnostics_snapshot(root, state, item, sources)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                diagnostic_snapshots[item['run_id']] = {}
+                unavailable.append(f'diagnostics snapshot {item["run_id"]}: {exc}')
     comparisons = {}
     paired_rows = []
     for role, field in (('baseline', 'baseline_run_id'), ('best_before', 'best_before_run_id'), ('comparison', 'comparison_run_id')):
@@ -640,6 +671,12 @@ def _build(root, run_id, base):
     aligned = candidate is not None and bool(candidate) and (not expected_ids or expected_ids == candidate_ids)
     if candidate is not None and expected_ids != candidate_ids:
         unavailable.append('candidate sample coverage differs from frozen DEV profile')
+    comparison_groups = comparisons['comparison'].get('groups', {})
+    groups_available = (bool(declared_group_tags) and comparisons['comparison'].get('status') == 'complete'
+                        and all(comparison_groups.get(tag, {}).get('status') == 'complete'
+                                and comparison_groups[tag].get('n_images', 0) > 0
+                                and comparison_groups[tag].get('mean_paired_psnr_delta_db') is not None
+                                for tag in declared_group_tags))
     section_status = {'text_summary': True, 'summary': True, 'execution': True,
                       'config_diff': not applicable or bool(construction),
                       'actual_changes': not applicable or bool(construction),
@@ -648,7 +685,7 @@ def _build(root, run_id, base):
                       'per_image_comparison': not applicable or comparisons['comparison'].get('status') == 'complete',
                       'cases': candidate is not None or not trial.get('valid'),
                       'curves': curves['status'] == 'complete',
-                      'groups': not applicable or bool(profile_ref) and comparisons['comparison'].get('status') == 'complete',
+                      'groups': not applicable or groups_available,
                       'regions': not applicable or comparisons['comparison'].get('regions_status') == 'complete'}
     required = observation_config.get('required_for_proposal', [])
     missing_required = [name for name in required if not section_status.get(name, False)] if trial.get('valid') else []
@@ -663,13 +700,19 @@ def _build(root, run_id, base):
     run_observation_path = _run_dir(root, state, trial) / 'observation_config.json'
     sources[str(run_observation_path)] = run_observation_path.read_text(encoding='utf-8') if run_observation_path.is_file() else None
     launch_observation = trial.get('observation_config') or _read(run_observation_path, {})
-    recorded_profile_ref = launch_observation.get('profile_ref') or (diagnostic_snapshots.get(run_id) or {}).get('profile_ref')
-    pretrial_profile = bool(profile_ref and recorded_profile_ref and _path(root, recorded_profile_ref).resolve() == _path(root, profile_ref).resolve())
+    recorded_profile_ref = launch_observation.get('profile_ref')
+    launch_profile_snapshot = launch_observation.get('profile_snapshot')
+    runtime_profile_snapshot = diagnostic_snapshots.get(run_id)
+    pretrial_profile = bool(profile_ref and recorded_profile_ref and current_profile_snapshot
+                           and launch_profile_snapshot == current_profile_snapshot
+                           and _path(root, recorded_profile_ref).resolve() == path.resolve()
+                           and (runtime_profile_snapshot is None or runtime_profile_snapshot == current_profile_snapshot))
     provenance = {'profile_available_at_run': pretrial_profile,
                   'retrospective': bool(profile_ref and not pretrial_profile or profile.get('retrospective') or profile.get('rules', {}).get('retrospective')),
-                  'reason': 'persisted run observation snapshot' if pretrial_profile else 'profile availability at original decision time is not established'}
+                  'reason': 'matching frozen prelaunch profile snapshot' if pretrial_profile else 'profile content availability at original decision time is not established'}
     inputs = {'assembler_schema_version': 2, 'trial': {key: val for key, val in trial.items() if key not in ('feedback_ref', 'feedback_revision', 'feedback', 'diagnostics_status', 'proposal_ready')},
-              'references': refs, 'resolved_config': resolved, 'profile': profile, 'required': required,
+              'references': refs, 'resolved_config': resolved, 'profile': profile,
+              'profile_snapshot': current_profile_snapshot, 'required': required,
               'sources': sources, 'provenance': provenance, 'history': history, 'comparisons': comparisons, 'cases': cases, 'curves': curves}
     inputs = json.loads(json.dumps(inputs, allow_nan=False))
     latest = _read(base / 'latest.json', {})

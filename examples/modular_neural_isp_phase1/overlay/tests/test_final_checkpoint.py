@@ -31,9 +31,15 @@ def native_run(cfg, run_id):
     (root / 'config.json').write_text(json.dumps(actual_cfg))
     train = {'best_checkpoint': str(checkpoint), 'config_dir': str(config_dir)}
     (root / 'train' / 'metrics.json').write_text(json.dumps(train))
+    dev = root / 'dev'; dev.mkdir()
+    metrics = {'mean_per_image_psnr': 22., 'num_images': 1,
+               'protocol': 'P' + str(cfg['eval_size']), 'eval_size': cfg['eval_size']}
+    (dev / 'metrics.json').write_text(json.dumps(metrics))
     result = {'run_id': run_id, 'status': 'completed', 'valid': True,
               'recipe': recipe, 'train_metrics': train, 'dev_psnr': 22.,
-              'expected_count': 1, 'artifacts': train, 'usage': {'gpu_hours': 0}}
+              'dev_metrics': metrics, 'expected_count': 1,
+              'artifacts': {**train, 'dev_metrics': str(dev / 'metrics.json')},
+              'usage': {'gpu_hours': 0}}
     (root / 'state.json').write_text(json.dumps(result))
     return result
 
@@ -173,7 +179,7 @@ def test_invalid_predeclared_candidate_cannot_fall_back_to_search(tmp_path, monk
     assert not parent.get('final_test') and not parent.get('final_checkpoint_ref')
 
 
-def test_ambiguous_plans_require_explicit_registered_selection(tmp_path):
+def test_later_registered_plan_cannot_override_frozen_primary(tmp_path):
     module, search, dest, task = selected_confirmation(tmp_path)
     path = dest / 'confirmation.json'
     state = json.loads(path.read_text())
@@ -183,8 +189,7 @@ def test_ambiguous_plans_require_explicit_registered_selection(tmp_path):
     parent = json.loads((search / 'campaign.json').read_text())
     parent['confirmation_refs'].append(state['association'])
     (search / 'campaign.json').write_text(json.dumps(parent))
-    with pytest.raises(ValueError, match='ambiguous'):
-        campaign.resolve_final_checkpoint(search)
+    assert campaign.resolve_final_checkpoint(search)['confirmation_dir'] == str(dest)
     reference = campaign.resolve_final_checkpoint(search, confirmation_dir=dest)
     assert reference['confirmation_dir'] == str(dest)
     with pytest.raises(ValueError):

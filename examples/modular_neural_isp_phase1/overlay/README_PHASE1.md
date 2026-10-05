@@ -45,6 +45,8 @@ seed: 7
 
 验证、best 选择、重载评测和候选比较统一为逐图 RGB PSNR 后平均；用 float64 计算 MSE，最小 MSE 为 1e-12。P512/P256 使用与 validation 一致的模型前向路径；官方 quarter/full 推理作为独立协议，不能混入同一排行榜。
 
+HDF5 缓存复用前会检查输入、GT、metadata 的实际路径、配对文件清单和前处理设置；旧 `COMPLETE` 标记本身不再足以证明缓存匹配。validation loss 按图像数量加权，避免尾批次影响曲线。PSNR 选优规则不变。
+
 ## 结果驱动的研究
 
 编辑 `configs/baseline.example.yaml` 填好真实 train/dev 路径后：
@@ -58,7 +60,7 @@ python -m tm_research.cli campaign next --campaign-dir campaigns/pilot
 
 本地模拟 proposer 只能证明控制器能消费结果并执行不同方案；真实 Naive 的研究行为需要 live 服务联调。
 
-`raw_best` 保存最高实测分数；`best` 仅在增幅严格超过冻结的 `min_delta` 后更新并清零无收益计数，冻结候选也使用这个有效 `best`。示例 `0.01 dB` 是工程初值，真实 pilot 前应依据同一权重在目标环境的重复 DEV 评测波动确定，并在初始化时固定，不能根据后续结果临时更改。完整的 baseline＋3 次真实提案启动与证据要求见 [ARIS pilot](docs/aris-campaign-task.md#real-naive-pilot-baseline-plus-three-proposals)。
+`raw_best` 保存最高实测分数；`best` 仅在增幅严格超过冻结的 `min_delta` 后更新并清零无收益计数，冻结候选也使用这个有效 `best`。示例 `0.01 dB` 是工程初值，真实 pilot 前应结合实际有用增益与评测波动确定，并在初始化时固定，不能根据后续结果临时更改。同一权重重复 DEV 只能估计评测波动；训练随机性的判断还需要配对 seed 复训。完整的 baseline＋3 次真实提案启动与证据要求见 [ARIS pilot](docs/aris-campaign-task.md#real-naive-pilot-baseline-plus-three-proposals)。
 
 ## 冻结与授权后的测试
 
@@ -74,6 +76,7 @@ python -m tm_research.cli campaign finalize --campaign-dir campaigns/pilot
 
 ## 验证范围与入口
 
+- [数据与科学证据可靠性修复](docs/reliability-fixes-20261005.md)
 - [本轮 review 修复与实测记录](docs/review-fix-verification.md)
 - [二次 review 阈值修复与验证](docs/rereview-followup.md)
 - [Naive / ARIS 服务设置](docs/naive-setup.md)
@@ -88,3 +91,5 @@ python -m tm_research.cli campaign finalize --campaign-dir campaigns/pilot
 新增 `campaign init --control ... --profile ...`、提交时独立 `--decision ...`、版本化逐图反馈、事件触发的复盘及冻结配方确认。科学 YAML、严格三键 proposal 和原有选优阈值保持兼容。作业先 prepare，再保存 active 引用，再启动；未知活性禁止重复训练，确认/校准预算预留，诊断失败不覆盖有效 DEV 分数。
 
 可执行命令和授权模板见 [fast-slow-research.md](docs/fast-slow-research.md)。模板中的空资源不是授权；真实数据/GPU、Naive＋ARIS transcript、多 seed 收益和独立泛化证据仍待实际运行。合成测试只验证工程行为。
+
+首次注册的可执行确认计划在任务开始前冻结为主计划；后续计划披露为探索性结果，不能替换主计划的 Q 结论或最终权重规则。profile 的事前来源按准备运行时保存的内容判断；仅路径相同不足以证明分组未改。确认报告与 campaign Q 共用实际结果校验，原生协议或配置失效会阻止结论提升。

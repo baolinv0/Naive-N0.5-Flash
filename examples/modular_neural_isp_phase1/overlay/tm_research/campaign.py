@@ -17,7 +17,7 @@ from .runner import (BUDGET_DEFAULTS, RECIPE_DEFAULTS, _execute, _now, _resolve_
 from .evidence import (build_run_feedback, build_fallback_feedback, resolve_trial_references,
                        diff_scientific_config, validate_feedback_access)
 from .control import load_control, check_action, pending_decision_reason
-from .research import route_next_action, validate_research_decision, _persist_decision, _safe_feedback
+from .research import route_next_action, validate_research_decision, _persist_decision, _safe_feedback, _published_feedback
 
 
 # Engineering default only; calibrate on repeated DEV reloads before a live campaign.
@@ -150,7 +150,7 @@ def _refresh_latest_feedback(directory, state):
         return
     try:
         index = json.loads(pointer.read_text(encoding='utf-8'))
-        feedback = _safe_feedback(directory, index['feedback_ref'])
+        feedback = _published_feedback(directory, run_id, index)
         access = validate_feedback_access(feedback)
         if not access['available']:
             raise ValueError('; '.join(access['unavailable']))
@@ -561,20 +561,21 @@ def _resolve_final_checkpoint(directory, state, confirmation_dir=None, *, freeze
     if not isinstance(receipts, list):
         raise ValueError('Final checkpoint confirmation receipts must be a list')
     try:
+        from .confirmation import _primary_receipt, _validate_primary_plan
+        receipt = _primary_receipt(state)
         candidates = []
-        for receipt in receipts:
+        if receipt is not None:
             path = str(Path(receipt['confirmation_dir']).resolve())
             if explicit is not None and path != explicit:
-                continue
+                raise ValueError('Final checkpoint selection must follow the primary confirmation plan')
             manifest = json.loads((Path(path) / 'confirmation.json').read_text(encoding='utf-8'))
             if manifest.get('association') != receipt:
                 raise ValueError('Final checkpoint confirmation association differs from parent')
+            _validate_primary_plan(state, receipt, manifest)
             if manifest.get('plan', {}).get('final_checkpoint_rule', {}).get('kind') == 'predeclared_seed':
                 candidates.append((path, receipt))
             elif explicit is not None:
                 raise ValueError('Explicit final checkpoint confirmation must declare a seed')
-        if len(candidates) > 1:
-            raise ValueError('Final checkpoint confirmation selection is ambiguous; specify confirmation_dir')
         if explicit is not None and not candidates:
             raise ValueError('Final checkpoint confirmation is not registered with this campaign')
         if frozen and frozen['kind'] == 'retain_search_checkpoint':

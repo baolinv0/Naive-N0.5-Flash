@@ -206,8 +206,43 @@ def _safe_feedback(directory, ref):
     path = (directory / path).resolve() if not path.is_absolute() else path.resolve()
     if not path.is_relative_to(directory / 'feedback') or not path.is_file():
         raise ValueError('feedback_ref must resolve to readable campaign feedback')
-    summary = json.loads(path.read_text(encoding='utf-8'))
+    summary = _read_json(path)
+    if 'feedback_ref' in summary:
+        declared = Path(summary['feedback_ref'])
+        declared = (directory / declared).resolve() if not declared.is_absolute() else declared.resolve()
+        if declared != path:
+            raise ValueError('Feedback summary pointer differs from its artifact path')
     summary['feedback_ref'] = str(path)
+    return summary
+
+
+def _published_feedback(directory, run_id, index):
+    """Require the published index, path and summary to identify one revision."""
+    if not isinstance(index, dict):
+        raise ValueError('Latest feedback index must contain an object')
+    for field in ('run_id', 'latest_run_id'):
+        if field in index and index[field] != run_id:
+            raise ValueError('Latest feedback index run identity differs from terminal run')
+    revision = index.get('feedback_revision')
+    if 'feedback_revision' in index and (not isinstance(revision, str) or not revision):
+        raise ValueError('Latest feedback index has invalid revision identity')
+    ref = index.get('feedback_ref')
+    if not ref:
+        if not revision:
+            raise ValueError('Published index has no feedback pointer')
+        ref = f'feedback/{run_id}/{revision}/summary.json'
+    summary = _safe_feedback(directory, ref)
+    if summary.get('run_id', summary.get('latest_run_id')) != run_id or any(
+            field in summary and summary[field] != run_id for field in ('run_id', 'latest_run_id')):
+        raise ValueError('Latest feedback summary run identity differs from terminal run')
+    if revision is not None and revision != summary.get('feedback_revision'):
+        raise ValueError('Latest feedback pointer revision differs from summary identity')
+    summary_revision = summary.get('feedback_revision')
+    run_root = Path(directory).resolve() / 'feedback' / run_id
+    target = Path(summary['feedback_ref'])
+    if (not target.is_relative_to(run_root) or
+            (summary_revision is not None and target != (run_root / summary_revision / 'summary.json').resolve())):
+        raise ValueError('Latest feedback pointer path differs from run/revision identity')
     return summary
 
 
@@ -216,14 +251,21 @@ def _current_feedback(directory, state):
         return {}
     run_id = state['trials'][-1]['run_id']
     latest = Path(directory) / 'feedback' / run_id / 'latest.json'
-    if latest.is_file():
-        index = json.loads(latest.read_text(encoding='utf-8'))
-        if index.get('feedback_ref'):
-            return _safe_feedback(directory, index['feedback_ref'])
-        revision = index.get('feedback_revision')
-        if revision:
-            return _safe_feedback(directory, f'feedback/{run_id}/{revision}/summary.json')
-    return state.get('latest_feedback') or {}
+    if latest.exists() or latest.is_symlink():
+        try:
+            index = _read_json(latest)
+            return _published_feedback(directory, run_id, index)
+        except (OSError, ValueError, TypeError) as exc:
+            raise ValueError('Latest feedback index is unreadable or invalid: ' + str(exc)) from exc
+    # Legacy campaigns may have no published index. Reload their referenced
+    # artifact rather than accepting an unverified in-state summary.
+    cached = state.get('latest_feedback') or {}
+    revisions = list(latest.parent.glob('*/summary.json'))
+    if revisions:
+        raise ValueError('Latest feedback index is missing for versioned feedback history')
+    if cached.get('feedback_ref') and cached.get('run_id') == run_id:
+        return _safe_feedback(directory, cached['feedback_ref'])
+    return {}
 
 
 def _decisions(directory):
@@ -392,20 +434,36 @@ def _read_json(path):
 
 
 def _confirmation(directory):
-    """Load only a registered parent receipt, never an adjacent guessed report."""
+    """Report every receipt, with claims governed by frozen primary authority."""
+    from .confirmation import _primary_receipt
     directory = Path(directory).resolve()
     parent = _load_state(directory)
     receipts = parent.get('confirmation_refs', [])
-    if not receipts:
-        return {}
     if not isinstance(receipts, list):
         return {'_association_error': 'Confirmation receipts must be a list'}
-    receipt = receipts[-1]  # Registration order, not a choice by observed score.
+    if not receipts:
+        return {}
+    history = [_registered_confirmation(directory, parent, receipt) for receipt in receipts]
+    try:
+        primary = _primary_receipt(parent)
+        selected = next(entry for receipt, entry in zip(receipts, history) if receipt == primary)
+        selected = copy.deepcopy(selected)
+    except (ValueError, StopIteration) as exc:
+        primary = None
+        selected = {'_association_error': str(exc)}
+    selected['_history'] = [dict(entry, _role='primary' if receipt == primary else 'exploratory')
+                            for receipt, entry in zip(receipts, history)]
+    return selected
+
+
+def _registered_confirmation(directory, parent, receipt):
+    from .confirmation import _validate_primary_plan
     try:
         destination = Path(receipt['confirmation_dir']).resolve()
         manifest = _read_json(destination / 'confirmation.json')
         if manifest.get('association') != receipt or Path(receipt['parent_campaign']).resolve() != directory or manifest.get('parent_campaign') != str(directory):
             raise ValueError('Confirmation receipt/manifest belongs to a different parent')
+        _validate_primary_plan(parent, receipt, manifest)
         trials = parent.get('trials', [])
         baseline = trials[0] if trials else {}
         winner = next((t for t in trials if t.get('run_id') == parent.get('frozen', {}).get('run_id')), {})
@@ -431,44 +489,8 @@ def _confirmation(directory):
 
 
 def _actual_confirmation_score(manifest, task):
-    from .runner import normalize_config, validate_metrics
-    from .evidence import diff_scientific_config
-    root = Path(manifest['_confirmation_dir']) / 'runs' / task['run_id']
-    if Path(task.get('run_dir', '')).resolve() != root.resolve():
-        raise ValueError('Task run directory does not match recorded run identity')
-    result, config = _read_json(root / 'state.json'), _read_json(root / 'config.json')
-    expected = normalize_config({**manifest['config'], **manifest['plan']['arms'][task['arm']]['recipe'], 'seed': task['seed']})
-    if diff_scientific_config(config, expected):
-        raise ValueError('Actual confirmation scientific config differs from frozen task')
-    if result.get('run_id') != task['run_id'] or result.get('status') != 'completed' or result.get('valid') is not True:
-        raise ValueError('Task has no actual valid completed result')
-    metrics = _read_json(root / 'dev/metrics.json')
-    expected_count = manifest['config']['validation']['expected_count']
-    if result.get('expected_count') != expected_count:
-        raise ValueError('Actual native sample count differs from frozen original DEV inventory')
-    score = validate_metrics(metrics, expected_count, config['eval_size'])
-    if result.get('dev_metrics') != metrics or not math.isclose(score, result.get('dev_psnr', float('nan')), abs_tol=1e-10, rel_tol=0):
-        raise ValueError('Actual native DEV result/metrics disagree')
-    if manifest['plan']['scope']['kind'] == 'independent':
-        evaluation_root = root / 'confirmation_eval'
-        evaluation = _read_json(evaluation_root / 'evaluation_result.json')
-        evaluation_state = _read_json(evaluation_root / 'evaluation_state.json')
-        frozen = evaluation_state.get('frozen', {})
-        split = manifest['evaluation_split_spec']
-        actual_checkpoint = frozen.get('checkpoint', {})
-        if (frozen.get('split') != split or {key: actual_checkpoint.get(key) for key in ('best_checkpoint', 'config_dir')} != {key: result['artifacts'][key] for key in ('best_checkpoint', 'config_dir')}
-                or actual_checkpoint.get('selection_split', 'original_dev') != 'original_dev'):
-            raise ValueError('Independent evaluation does not link frozen checkpoint/split')
-        if evaluation.get('valid') is not True:
-            raise ValueError('Independent evaluation invalid')
-        metrics = _read_json(evaluation_root / 'metrics.json')
-        score = validate_metrics(metrics, split['expected_count'], config['eval_size'])
-        if evaluation.get('metrics') != metrics or not math.isclose(evaluation.get('score', float('nan')), score, abs_tol=1e-10, rel_tol=0):
-            raise ValueError('Independent actual metrics/result disagree')
-    if type(task.get('score')) not in (int, float) or not math.isclose(task['score'], score, abs_tol=1e-10, rel_tol=0):
-        raise ValueError('Recorded task score differs from actual result')
-    return score
-
+    from .confirmation import _actual_confirmation_score as validate_native_score
+    return validate_native_score(manifest, task)
 
 def _q_claim(state, manifest):
     q = {'status': 'exploratory_dev' if state.get('best') else 'unavailable',
@@ -476,6 +498,15 @@ def _q_claim(state, manifest):
     if not manifest:
         return q
     q.update(status='inconclusive', statistical_significance=False)
+    if '_history' in manifest:
+        q['confirmation_history'] = []
+        for entry in manifest['_history']:
+            claim = _q_claim(state, entry)
+            q['confirmation_history'].append({**claim, 'role': entry['_role'],
+                'confirmation_ref': entry.get('_confirmation_dir') or entry.get('_receipt', {}).get('confirmation_dir'),
+                'plan': copy.deepcopy(entry.get('plan')),
+                'task_statuses': [{'task_key': task.get('task_key'), 'status': task.get('status'),
+                                   'error': task.get('error')} for task in entry.get('tasks', [])]})
     if manifest.get('_association_error'):
         q['reason'] = manifest['_association_error']
         return q
@@ -487,26 +518,21 @@ def _q_claim(state, manifest):
         seeds, replicates = plan['seeds'], plan['replicates']
         if not seeds or len(seeds) != len(set(seeds)) or any(type(seed) is not int for seed in seeds) or type(replicates) is not int or replicates < 1:
             raise ValueError('Invalid frozen seed/replicate inventory')
-        expected = {f'{arm}:{seed}:{replicate}' for seed in seeds for replicate in range(1, replicates + 1) for arm in ('baseline', 'winner')}
-        order = plan['execution_order']
-        tasks = manifest['tasks']
-        by_key = {task['task_key']: task for task in tasks}
-        if set(order) != expected or len(order) != len(expected) or set(by_key) != expected or len(tasks) != len(expected):
-            raise ValueError('Task/pair inventory differs from the frozen complete plan')
-        completed_ids = [task.get('run_id') for task in tasks if task.get('status') == 'completed']
-        if len(set(completed_ids)) != len(completed_ids):
-            raise ValueError('One actual run cannot count as multiple confirmation tasks')
-        for key, task in by_key.items():
-            if key != f'{task["arm"]}:{task["seed"]}:{task["replicate"]}':
-                raise ValueError('Task identity differs from frozen task key')
+        q.update(planned_pairs=len(seeds)*replicates, complete_pairs=0)
+        from .confirmation import _task_inventory
+        by_key = _task_inventory(manifest)
         pairs = []
         for seed in seeds:
             for replicate in range(1, replicates + 1):
                 pair = {'seed': seed, 'replicate': replicate, 'status': 'incomplete', 'delta_db': None}
                 baseline, winner = (by_key[f'{arm}:{seed}:{replicate}'] for arm in ('baseline', 'winner'))
                 if baseline.get('status') == winner.get('status') == 'completed':
-                    scores = [_actual_confirmation_score(manifest, task) for task in (baseline, winner)]
-                    pair.update(status='complete', delta_db=scores[1]-scores[0], baseline_run_id=baseline['run_id'], winner_run_id=winner['run_id'])
+                    try:
+                        scores = [_actual_confirmation_score(manifest, task) for task in (baseline, winner)]
+                        pair.update(status='complete', delta_db=scores[1]-scores[0], baseline_run_id=baseline['run_id'], winner_run_id=winner['run_id'])
+                    except (OSError, ValueError, KeyError, TypeError) as exc:
+                        pair['evidence_errors'] = [str(exc)]
+                        q['reason'] = 'Confirmation evidence incomplete or incompatible: ' + str(exc)
                 pairs.append(pair)
         q.update(confirmation_pairs=pairs, planned_pairs=len(seeds)*replicates, complete_pairs=sum(p['status'] == 'complete' for p in pairs))
         threshold = plan.get('delta_useful_db')
@@ -632,6 +658,19 @@ def build_campaign_report(campaign_dir):
         lines.append(f'- {level}: {claim["status"]}. {claim["reason"]}')
     lines += ['', '## Observed trials', '', '| Run | Valid | Result | DEV PSNR |', '|---|---|---|---|']
     lines += [f'| {t["run_id"]} | {t["valid"]} | {t["result_status"]} | {t["dev_psnr"]} |' for t in report['trials']]
+    history = report['claims']['Q'].get('confirmation_history', [])
+    if history:
+        lines += ['', '## Confirmation plans', '',
+                  '| Role | Confirmation | Seeds | Scope | Result | Complete/planned pairs |',
+                  '|---|---|---|---|---|---|']
+        for entry in history:
+            plan = entry.get('plan') or {}
+            lines.append(f'| {entry["role"]} | {entry.get("confirmation_ref")} | '
+                         f'{plan.get("seeds", "unavailable")} | {plan.get("scope", {}).get("kind", "unavailable")} | '
+                         f'{entry["status"]} | {entry.get("complete_pairs", "unavailable")}/{entry.get("planned_pairs", "unavailable")} |')
+            errors = [task for task in entry.get('task_statuses', []) if task.get('status') == 'failed']
+            if errors:
+                lines.append('Failed tasks: ' + '; '.join(f'{task["task_key"]}: {task.get("error")}' for task in errors))
     lines += ['', '## Cost and uncertainty', '', f'GPU-hours: {gpu_hours}; inference cost: unavailable.', '']
     lines += ['- ' + item for item in report['limitations']]
     lines += ['', '## Unresolved alternatives', ''] + ['- ' + item for item in report['alternative_explanations']]

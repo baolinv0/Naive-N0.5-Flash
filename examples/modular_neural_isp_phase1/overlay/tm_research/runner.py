@@ -258,7 +258,19 @@ def prepare_run(config, *, observation_config=None, execution_limits=None, reque
     observation = dict(observation_config or {})
     profile = observation.get('profile_ref') or observation.get('diagnostics_profile')
     if profile:
-        observation['profile_ref'] = str(Path(profile).resolve())
+        from .diagnostics import diagnostics_snapshot
+        profile_path = Path(profile).resolve()
+        if profile_path.is_dir():
+            profile_path /= 'profile.json'
+        observation['profile_ref'] = str(profile_path)
+        # This metadata proves which readable identity existed before launch;
+        # it is kept outside the scientific training/evaluation config.
+        observation.pop('profile_snapshot', None)
+        observation.pop('profile_snapshot_error', None)
+        try:
+            observation['profile_snapshot'] = diagnostics_snapshot(_read_json(profile_path))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            observation['profile_snapshot_error'] = f'{type(exc).__name__}: {exc}'
     if request_id is not None and (not isinstance(request_id, str) or
             not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', request_id)):
         raise ValueError('request_id must be a safe nonempty launch request identifier')

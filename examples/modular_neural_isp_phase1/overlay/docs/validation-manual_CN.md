@@ -422,6 +422,8 @@ PY
 
 `confirmation next` 一次推进一个 task，按返回状态重复，terminal 后 report，不重新 init 或择优重试失败配对。默认 retain_search_checkpoint 的 final-checkpoint 不传 confirmation-dir；仅另行采用事先固定的 `predeclared_seed` 且对应 task 有效完成时，才传该参数绑定指定确认权重，不能确认后择优挑 seed。确认不更新搜索 best。原 DEV 多 seed 仅支持该适应性 DEV 的稳定性；独立确认必须有授权、无场景重叠的独立资源，不能把 TEST 改名。保留失败/不完整配对，报告支持范围和不确定性。
 
+首次注册的可执行确认计划是冻结的主计划，后续计划只能作为探索性结果披露；Q 与 final-checkpoint 均服从主计划，显式传入另一个 confirmation-dir 也不能事后改选。旧 campaign 若已有多个计划却没有保存主计划绑定，不能据此补造预注册结论。报告会重新检查实际配置、运行状态、协议和分数，不能只凭已完成 task 的缓存值宣布支持。
+
 ### 10.2 研究收益和产品证据另验
 
 等预算比较建议四组：固定/随机搜索；Naive 只看聚合 PSNR；Naive 看丰富反馈无慢复盘；Naive 看丰富反馈且有慢复盘。先冻结预算、确认方法和评价：独立确认收益、有效实验率、训练耗时、推理 token/费用、有效候选所需时间、人工介入。

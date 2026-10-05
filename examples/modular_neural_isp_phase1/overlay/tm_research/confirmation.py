@@ -181,8 +181,69 @@ def _register_receipt(search, parent, state, directory):
     if same_path and any(r != receipt for r in same_path):
         raise ValueError('Existing confirmation receipt association differs')
     if not same_path:
+        # Bind authority before the first task can launch. Existing evidence is
+        # never retroactively treated as proof of preregistration.
+        if not receipts and 'primary_confirmation' not in parent and all(
+                task.get('status') == 'pending' and not task.get('run_id')
+                and not task.get('result') for task in state['tasks']):
+            parent['primary_confirmation'] = {'association': deepcopy(receipt),
+                                              'plan': deepcopy(state['plan']),
+                                              'registered_at': runner._now()}
         receipts.append(deepcopy(receipt))
         runner._write_json(search / 'campaign.json', parent)
+
+
+def _primary_receipt(parent):
+    """Return frozen authority; old single plans work, old multiple plans do not."""
+    receipts = parent.get('confirmation_refs', [])
+    if not isinstance(receipts, list):
+        raise ValueError('Confirmation receipts must be a list')
+    primary = parent.get('primary_confirmation')
+    if primary is not None:
+        if (not isinstance(primary, dict) or not primary.get('registered_at')
+                or not isinstance(primary.get('plan'), dict) or not receipts
+                or primary.get('association') != receipts[0]
+                or receipts.count(primary['association']) != 1):
+            raise ValueError('Frozen primary confirmation association is missing or incompatible')
+        return primary['association']
+    if len(receipts) > 1:
+        raise ValueError('Confirmation authority is ambiguous: multiple legacy plans lack preregistration')
+    return receipts[0] if receipts else None
+
+
+def _validate_primary_plan(parent, receipt, manifest):
+    primary = parent.get('primary_confirmation')
+    if primary and receipt == primary.get('association') and manifest.get('plan') != primary.get('plan'):
+        raise ValueError('Primary confirmation plan differs from its immutable preregistration')
+
+
+def _effective_config(config):
+    """Compare scientific settings using the defaults actually used by workers."""
+    return runner.normalize_config({**runner.BUDGET_DEFAULTS, **runner.RECIPE_DEFAULTS, **config})
+
+
+def _task_inventory(manifest):
+    """Validate the entire frozen paired plan before counting any native result."""
+    plan = manifest['plan']
+    seeds, replicates = plan['seeds'], plan['replicates']
+    if (not seeds or len(seeds) != len(set(seeds))
+            or any(type(seed) is not int or seed < 0 for seed in seeds)
+            or type(replicates) is not int or replicates < 1):
+        raise ValueError('Invalid frozen seed/replicate inventory')
+    expected = {f'{arm}:{seed}:{replicate}' for seed in seeds
+                for replicate in range(1, replicates + 1) for arm in ('baseline', 'winner')}
+    order, tasks = plan['execution_order'], manifest['tasks']
+    by_key = {task['task_key']: task for task in tasks}
+    if (set(order) != expected or len(order) != len(expected)
+            or set(by_key) != expected or len(tasks) != len(expected)):
+        raise ValueError('Task/pair inventory differs from the frozen complete plan')
+    completed_ids = [task.get('run_id') for task in tasks if task.get('status') == 'completed']
+    if len(set(completed_ids)) != len(completed_ids):
+        raise ValueError('One actual run cannot count as multiple confirmation tasks')
+    for key, task in by_key.items():
+        if key != f'{task["arm"]}:{task["seed"]}:{task["replicate"]}':
+            raise ValueError('Task identity differs from frozen task key')
+    return by_key
 
 
 def _scene_independence(profiles):
@@ -626,6 +687,80 @@ def _scene_report(pairs, inventory):
             'unit': 'paired per-image differences within each seed; seeds and images are not pooled'}
 
 
+def _read_object(path):
+    value = json.loads(Path(path).read_text(encoding='utf-8'))
+    if not isinstance(value, dict):
+        raise ValueError('Native evidence must contain an object: ' + str(path))
+    return value
+
+
+def _frozen_confirmation_config(manifest, directory, parent=None):
+    """Bind fixed settings to the actual parent and its frozen native DEV count."""
+    from .evidence import diff_scientific_config
+    parent = parent if parent is not None else _read_object(Path(manifest['parent_campaign']) / 'campaign.json')
+    identity = manifest.get('parent_identity', {})
+    if (not isinstance(identity, dict) or identity.get('config') != parent.get('config')
+            or identity.get('frozen') != parent.get('frozen')):
+        raise ValueError('Frozen parent scientific config or winner identity differs from confirmation snapshot')
+    base = _effective_config(parent['config'])
+    base.pop('test', None)
+    base['runs_dir'] = str(Path(directory).resolve() / 'runs')
+    parent_result = runner.get_result(parent['frozen']['run_id'], parent['config']['runs_dir'])
+    count = parent_result.get('expected_count')
+    if (type(count) is not int or count < 1 or
+            base['validation'].get('expected_count', count) != count):
+        raise ValueError('Confirmation scientific config has no matching frozen parent DEV sample count')
+    base['validation']['expected_count'] = count
+    if diff_scientific_config(_effective_config(manifest['config']), base):
+        raise ValueError('Confirmation scientific config differs from frozen parent')
+    return base
+
+
+def _actual_confirmation_score(manifest, task):
+    from .runner import validate_metrics
+    from .evidence import diff_scientific_config
+    root = Path(manifest['_confirmation_dir']) / 'runs' / task['run_id']
+    if Path(task.get('run_dir', '')).resolve() != root.resolve():
+        raise ValueError('Task run directory does not match recorded run identity')
+    result, config = _read_object(root / 'state.json'), _read_object(root / 'config.json')
+    base = _frozen_confirmation_config(manifest, manifest['_confirmation_dir'])
+    expected = _effective_config({**base, **manifest['plan']['arms'][task['arm']]['recipe'], 'seed': task['seed']})
+    if diff_scientific_config(_effective_config(config), expected):
+        raise ValueError('Actual confirmation scientific config differs from frozen task')
+    if result.get('run_id') != task['run_id'] or result.get('status') != 'completed' or result.get('valid') is not True:
+        raise ValueError('Task has no actual valid completed result')
+    metrics = _read_object(root / 'dev/metrics.json')
+    expected_count = base['validation']['expected_count']
+    if result.get('expected_count') != expected_count:
+        raise ValueError('Actual native sample count differs from frozen original DEV inventory')
+    score = validate_metrics(metrics, expected_count, config['eval_size'])
+    if result.get('dev_metrics') != metrics or not math.isclose(score, result.get('dev_psnr', float('nan')), abs_tol=1e-10, rel_tol=0):
+        raise ValueError('Actual native DEV result/metrics disagree')
+    if manifest['plan']['scope']['kind'] == 'independent':
+        evaluation_root = root / 'confirmation_eval'
+        evaluation = _read_object(evaluation_root / 'evaluation_result.json')
+        evaluation_state = _read_object(evaluation_root / 'evaluation_state.json')
+        frozen = evaluation_state.get('frozen', {})
+        if not isinstance(frozen, dict):
+            raise ValueError('Independent native evaluation frozen evidence must contain an object')
+        split = manifest['evaluation_split_spec']
+        actual_checkpoint = frozen.get('checkpoint', {})
+        if not isinstance(actual_checkpoint, dict):
+            raise ValueError('Independent native evaluation frozen checkpoint must contain an object')
+        if (frozen.get('split') != split or {key: actual_checkpoint.get(key) for key in ('best_checkpoint', 'config_dir')} != {key: result['artifacts'][key] for key in ('best_checkpoint', 'config_dir')}
+                or actual_checkpoint.get('selection_split', 'original_dev') != 'original_dev'):
+            raise ValueError('Independent evaluation does not link frozen checkpoint/split')
+        if evaluation.get('valid') is not True:
+            raise ValueError('Independent evaluation invalid')
+        metrics = _read_object(evaluation_root / 'metrics.json')
+        score = validate_metrics(metrics, split['expected_count'], config['eval_size'])
+        if evaluation.get('metrics') != metrics or not math.isclose(evaluation.get('score', float('nan')), score, abs_tol=1e-10, rel_tol=0):
+            raise ValueError('Independent actual metrics/result disagree')
+    if type(task.get('score')) not in (int, float) or not math.isclose(task['score'], score, abs_tol=1e-10, rel_tol=0):
+        raise ValueError('Recorded task score differs from actual result')
+    return score
+
+
 def _final_checkpoint_candidate(search, parent, directory, receipt):
     """Validate registered authority and actual weight identity without reading TEST."""
     directory = Path(directory).resolve()
@@ -666,6 +801,7 @@ def _final_checkpoint_candidate(search, parent, directory, receipt):
     task = tasks[0]
     if task.get('status') != 'completed' or not task.get('run_id'):
         raise ValueError('Predeclared final checkpoint task is not completed')
+    _task_inventory(state)
     root = directory / 'runs' / task['run_id']
     if (Path(state['config']['runs_dir']).resolve() != directory / 'runs' or
             Path(task.get('run_dir', '')).resolve() != root):
@@ -673,24 +809,12 @@ def _final_checkpoint_candidate(search, parent, directory, receipt):
     cfg = json.loads((root / 'config.json').read_text(encoding='utf-8'))
     # Fixed science comes from the validated parent snapshot, never from a
     # confirmation manifest that could change together with its native run.
-    base = runner.normalize_config({**runner.BUDGET_DEFAULTS, **runner.RECIPE_DEFAULTS,
-                                    **parent['config']})
-    base.pop('test', None)
-    base['runs_dir'] = str(directory / 'runs')
-    parent_result = runner.get_result(parent['frozen']['run_id'], parent['config']['runs_dir'])
-    count = parent_result.get('expected_count')
-    if (type(count) is not int or count < 1 or
-            base['validation'].get('expected_count', count) != count):
-        raise ValueError('Final checkpoint scientific config has no matching frozen DEV sample count')
-    base['validation']['expected_count'] = count
-    manifest_cfg = runner.normalize_config({**runner.BUDGET_DEFAULTS, **runner.RECIPE_DEFAULTS,
-                                           **state['config']})
+    base = _frozen_confirmation_config(state, directory, parent)
     from .evidence import diff_scientific_config
-    if diff_scientific_config(manifest_cfg, base):
-        raise ValueError('Final checkpoint confirmation scientific config differs from frozen parent')
     expected = {**base, **plan['arms']['winner']['recipe'], 'seed': rule['seed']}
-    if diff_scientific_config(cfg, expected):
+    if diff_scientific_config(_effective_config(cfg), _effective_config(expected)):
         raise ValueError('Final checkpoint actual scientific config differs from frozen task')
+    _actual_confirmation_score({**state, '_confirmation_dir': str(directory)}, task)
     result = runner.get_result(task['run_id'], str(directory / 'runs'))
     recorded = task.get('result', {})
     if (result.get('run_id') != task['run_id'] or result.get('status') != 'completed'
@@ -720,14 +844,31 @@ def report_confirmation(confirmation_dir):
     """Report fixed direction rule with failures, coverage and explicit claim limits."""
     state = _read(confirmation_dir)
     plan = state['plan']
+    native_manifest = {**state, '_confirmation_dir': str(Path(confirmation_dir).resolve())}
+    evidence_errors = []
+    try:
+        by_key = _task_inventory(state)
+    except (ValueError, KeyError, TypeError) as exc:
+        evidence_errors.append(str(exc))
+        by_key = {task.get('task_key'): task for task in state['tasks']}
     pairs = []
     for seed in plan['seeds']:
         for replicate in range(1, plan['replicates'] + 1):
-            arms = {t['arm']: t for t in state['tasks'] if t['seed'] == seed and t['replicate'] == replicate}
-            complete = all(arms[a]['status'] == 'completed' for a in ('baseline', 'winner'))
+            arms = {arm: by_key.get(f'{arm}:{seed}:{replicate}', {'status': 'missing'})
+                    for arm in ('baseline', 'winner')}
+            complete = not evidence_errors and all(arms[a]['status'] == 'completed' for a in ('baseline', 'winner'))
+            scores, pair_errors = {}, list(evidence_errors)
+            if complete:
+                for arm in ('baseline', 'winner'):
+                    try:
+                        scores[arm] = _actual_confirmation_score(native_manifest, arms[arm])
+                    except (OSError, ValueError, KeyError, TypeError) as exc:
+                        pair_errors.append(arm + ': ' + str(exc))
+                complete = not pair_errors
             pair = {'seed': seed, 'replicate': replicate, 'status': 'complete' if complete else 'incomplete',
                     'baseline_run_id': arms['baseline'].get('run_id'), 'winner_run_id': arms['winner'].get('run_id'),
-                    'delta_db': arms['winner']['score'] - arms['baseline']['score'] if complete else None}
+                    'delta_db': scores['winner'] - scores['baseline'] if complete else None,
+                    'evidence_errors': pair_errors}
             inventory = state.get('inventory')
             left, right = _per_image(arms['baseline'], inventory), _per_image(arms['winner'], inventory)
             expected = {sample['sample_id'] for sample in (inventory or {}).get('samples', [])}
@@ -764,11 +905,26 @@ def report_confirmation(confirmation_dir):
     ledger = reconcile_usage(state['control'], current_parent)
     final_checkpoint_ref = current_parent.get('final_checkpoint_ref')
     final_checkpoint_pending_adoption = False
-    if final_checkpoint_ref or (rule['kind'] == 'predeclared_seed' and final_checkpoint and final_checkpoint.get('available')):
+    authority_error = None
+    try:
+        authority = _primary_receipt(current_parent)
+        _validate_primary_plan(current_parent, state.get('association'), state)
+        role = 'primary' if authority == state.get('association') else 'exploratory'
+    except ValueError as exc:
+        authority, role, authority_error = None, 'ambiguous', str(exc)
+        conclusion = 'inconclusive'
+    if role != 'primary':
+        final_checkpoint = {'available': False, 'reason': authority_error or 'Exploratory plan has no final checkpoint authority'}
+    if final_checkpoint_ref or (role == 'primary' and rule['kind'] == 'predeclared_seed' and final_checkpoint and final_checkpoint.get('available')):
         from .campaign import _resolve_final_checkpoint
-        candidate = _resolve_final_checkpoint(Path(state['parent_campaign']).resolve(), current_parent, freeze=False)
-        final_checkpoint = {**candidate, 'available': True}
-        final_checkpoint_pending_adoption = final_checkpoint_ref is None
+        try:
+            candidate = _resolve_final_checkpoint(Path(state['parent_campaign']).resolve(), current_parent, freeze=False)
+            final_checkpoint = {**candidate, 'available': True}
+            final_checkpoint_pending_adoption = final_checkpoint_ref is None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            conclusion = 'inconclusive'
+            final_checkpoint = {'available': False, 'reason': str(exc)}
+            evidence_errors.append('Final checkpoint evidence unavailable: ' + str(exc))
     report = {'parent_campaign': state['parent_campaign'], 'association': state.get('association'), 'status': state['status'], 'scope': plan['scope'],
               'conclusion': conclusion, 'scene_independence': state.get('scene_independence'), 'pairs': pairs, 'tasks': state['tasks'], 'mean_delta_db': mean,
               'complete_pairs': len(values), 'planned_pairs': len(pairs), 'delta_useful_db': threshold,
@@ -777,6 +933,9 @@ def report_confirmation(confirmation_dir):
               'adaptive_bias_reason': 'Original DEV was used adaptively in search; repeated seeds do not remove its selection bias.' if plan['scope']['kind'] == 'original_dev' else None,
               'claim_limit': 'Small paired-seed direction rule within frozen scope; no statistical significance or product/generalization claim.',
               'final_checkpoint_rule': rule, 'final_checkpoint': final_checkpoint,
+              'confirmation_role': role, 'primary_confirmation': current_parent.get('primary_confirmation'),
+              'authority_error': authority_error,
+              'evidence_errors': evidence_errors + [error for pair in pairs for error in pair['evidence_errors']],
               'final_checkpoint_ref': final_checkpoint_ref,
               'final_checkpoint_pending_adoption': final_checkpoint_pending_adoption,
               'usage': {'confirmation_gpu_hours': _cost(state), 'search_gpu_hours': ledger['search_gpu_hours'] if ledger['known'] else None,

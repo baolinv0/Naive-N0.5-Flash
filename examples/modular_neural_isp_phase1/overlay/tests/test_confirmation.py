@@ -81,6 +81,9 @@ def test_confirmation_is_idempotent_and_does_not_mutate_search_best(tmp_path):
     assert len(list((dest / 'runs').glob('exp_*'))) == 4
     after = json.loads((search / 'campaign.json').read_text())
     after.pop('confirmation_refs', None)
+    primary = after.pop('primary_confirmation')
+    assert primary['association'] == original['association']
+    assert primary['plan'] == original['plan']
     assert after == before
 
 

@@ -16,11 +16,15 @@ PSNR is the mean of per-image RGB PSNR, float64 reduction, range [0,1], minimum 
 
 Ordinary trials train, reload the selected checkpoint in another process and evaluate dev. Missing/unloadable checkpoint, nonfinite score or incorrect sample count is not a comparable result. Completed execution is distinct from a valid experiment and from a PSNR improvement. The current evaluator shares fixed repository code; it is not a separately isolated evaluation service. Model/code search is outside this contract.
 
+Preprocessed HDF5 caches validate the canonical input, GT and metadata resources, paired file inventory and preprocessing settings before reuse. A legacy completion marker alone does not establish data identity. Validation loss summaries weight each batch mean by its image count, including a partial final batch; selection continues to use mean per-image PSNR. CUDA forward timings synchronize the measured device around the model call.
+
 ## Research loop
 
 ARIS-Code uses the task-specific campaign CLI to read actual dev evidence, write a hypothesis and recipe with a referenced parent result, run one experiment, and repeat. The controller persists evidence, compares scores and stops at the configured trial/stagnation limit. Trials run serially. Finalize freezes the selected recipe; final-test is separate and never feeds the search prompt.
 
 Prepared runs are persisted before startup and recover by the same run identity; unknown liveness blocks new work. Interrupted or failed attempts remain invalid and are not automatically retried. There is no optimizer/RNG resume or multi-GPU scheduling. Opt-in paired-seed confirmation reuses frozen baseline/winner recipes independently of search; TM-only attribution remains a separate experiment. Synthetic fixtures and simulated proposers must be labeled; neither establishes real-camera gains or live Naive research ability.
+
+The first eligible confirmation plan is the frozen primary authority. Additional plans are disclosed as exploratory and cannot replace the primary Q result or checkpoint rule. Both report paths validate actual native evidence rather than trusting cached task scores. The directional confirmation rule is not a significance test or proof of fast/slow strategy superiority.
 
 Functionality comes first: only checks that directly affect runnable experiments or comparable scores. No content fingerprint system, extreme-case matrix, or mechanical review score.
 

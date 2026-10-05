@@ -96,6 +96,8 @@ def diagnostics_snapshot(profile):
     snapshot['roi_profile_ref'] = profile.get('roi_profile_ref')
     if profile.get('roi_profile_ref'):
         roi = json.loads(Path(profile['roi_profile_ref']).read_text(encoding='utf-8'))
+        if not isinstance(roi, dict):
+            raise ValueError('ROI profile must be a JSON object')
         if roi.get('profile_identity') != _profile_identity(profile):
             raise ValueError('ROI frozen profile identity mismatch')
         snapshot.update(metric_config=copy.deepcopy(roi['metric_config']),
