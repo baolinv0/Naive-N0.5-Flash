@@ -229,21 +229,23 @@ N-FS 的 slow 是同一 Naive 的一次独立模型请求：使用冻结 reviewe
 
 存储需要原始数据、HDF5、checkpoints、逐图/ROI、完整模型与 CLI 日志。P512 每对 input+GT float32 数组未压缩约 6 MiB；1000 对约 5.86 GiB，HDF5 gzip 后实测为准。缓存可跨 recipe 复用，不能按900次训练重复估算相同缓存。当前云机无 GPU、可用盘约26GB，不能作为上述完整实验资源已经到位的证据。
 
-## 10. 实施前需要补齐的部分
+## 10. 实现状态与运行前置条件
 
 | 内容 | 当前状态 | 交付验收 |
 | --- | --- | --- |
 | 训练/独立 DEV/冻结/配对确认 | 已实现；已有 CPU 工程验证 | 目标 GPU、真实数据 native 回归与先导 |
 | ARIS/真实 Naive 宿主接入 | 需要实际 endpoint 和 host hook | 原始请求/响应、CLI capture、真实运行对应 |
-| R/TPE/反馈投影/分块调度 | 未实现 | 外层策略 runner 经共同 API 执行，不写 state、不改 evaluator |
-| plateau 审查消融 | 可用阈值 K+1 配置实现 | 验证该组未触发 plateau 审查，硬诊断仍有效 |
-| tokens/费用/人工介入 | 现成报告未提供完整值 | collector覆盖成功/失败/超时，按完整token计；无法取得标unavailable |
-| 跨 campaign 统计与图表 | 未实现 | 从原始工件只读汇总，按预注册配对与场景身份计算 |
+| R/TPE/反馈投影/分块调度 | 已实现外层模块、配置生成和逐步 CLI；已有标记的工程 fixture 验证 | 通过共同 native API 执行，目标真实数据/模型先导另验 |
+| plateau 审查消融 | 生成器将四组阈值设为 K+1、完整组设为 2；slow 是独立请求 | 真实先导核对 plateau 事件、原始 slow 请求和硬诊断 |
+| tokens/费用/人工介入 | 已实现共享模型 ledger、相同 campaign 上限和成功/失败请求记录；预约与实际 usage 分列 | 实际 usage/金额缺失保持 null；人工介入须另存日志 |
+| 跨 campaign 统计与图表 | 已实现配对符号翻转、区间反演、Holm、JSON/CSV 和确认收益图 | 仅合格独立 primary 进入主比较；场景交叉 bootstrap、成本曲线等扩展另实现 |
 | 强数据隔离 | 不由当前 CLI 保证 | 宿主权限/挂载验证，CONFIRM/TEST 未进入模型请求 |
 
-先交付配置生成与策略 runner，再完成五组各一轮的小规模共同接口验收，最后启动资源密集主实验。任何必要实现改变后的代码版本重新冻结；本协议记录的 `0a05bff` 是当前文档与能力核对基线。
+配置、命令及预约预算见[实验编排器使用说明](../experiment-runner_CN.md)和[manifest 示例](../../configs/experiment.example.json)。工程 fixture 不代表真实 Naive W 接受或正式五组主实验完成。先完成目标环境原生回归、真实服务与数据先导，再启动资源密集主实验；不会由单个 CLI 命令隐式执行900次训练。任何必要实现改变后的代码版本重新冻结；本协议记录的 `0a05bff` 是原文历史核对基线，执行版本另填真实 source revision。
 
-当前adapter没有usage计数，生成/解析失败也可能未写requests日志。本地服务需要外层采集实际完整token IDs/counts及所有失败；第三方服务需可信完整usage。重新tokenize可见JSON不能冒充精确总输出数。无法可靠计费时不宣称已经执行硬token预算或成本优势，应在实施验收中先解决。
+现有 Naive adapter 自身不提供可信 usage。外层 provider 保存请求、原始流和失败，文本以 UTF-8 字节加模板 allowance 保守预约；这不是实际 tokenizer 计数或已经证明的硬上下文界限。所有角色共享全局模型预算并受每 campaign 的相同上限约束；全局额度须覆盖全部 campaign 分配。未知实际 tokens/金额保留 null。本地服务仍需采集完整 token IDs/counts；第三方服务需可信完整 usage。重新 tokenize 可见 JSON 不能冒充完整输出数；没有实际计费证据时不宣称成本优势。
+
+当前独立确认同时为训练与独立评测预约完整作业上限。令 `H=allocated_gpus×job_walltime_seconds/3600`，正式主实验至少分配 `5×10×(12+4×3)×H=1200H`，另加校准等保留；这是900次训练和300次独立评测的保守预算，不是测得的实际 GPU 小时。
 
 启动前必须填实：数据与场景清单、weights/config路径、GPU/驱动和运行权限、endpoint/model revision、宿主版本、最终训练协议、H/总GPUh/推理金额、最终R与阈值、primary确认计划、执行顺序、提示与投影视图、结果输出目录。路径和授权信息不会从本文示例自动产生。
 

@@ -6,6 +6,8 @@
 
 本手册与[科研循环实验方案](plans/naive-research-loop-experiments-20261005_CN.md)是同一验证链的两个阶段：本手册负责 A 部署验收和 B 真实 Naive 闭环；实验方案负责 D 等预算策略比较及独立 CONFIRM 统计。C 冻结确认是两者之间的接口。除非明确创建正式策略 campaign，否则本手册中的 `max_search_trials=4`、四轮 W 验收和 `slow_policy=2` 不应扩展成正式主实验预算。
 
+五组外层工具的配置、逐步推进和成本预约见[实验编排器使用说明](experiment-runner_CN.md)。该工具的工程 fixture 与真实 Naive W、完整主实验验收分别记录。
+
 ## 1. 首次验收做什么
 
 | 阶段 | 操作 | 通过标准 | 能说明什么 |
