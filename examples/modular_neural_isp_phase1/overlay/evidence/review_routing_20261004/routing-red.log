@@ -1,0 +1,272 @@
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+_ test_current_route_has_matching_agent_instruction[wait-collect existing work] _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin0')
+action = 'wait', required_text = 'collect existing work'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: wait.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+_ test_current_route_has_matching_agent_instruction[diagnose-campaign review-packet] _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin1')
+action = 'diagnose', required_text = 'campaign review-packet'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: diagnose.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+__ test_current_route_has_matching_agent_instruction[propose-campaign submit] __
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin2')
+action = 'propose', required_text = 'campaign submit'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: propose.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+_ test_current_route_has_matching_agent_instruction[finalize-campaign finalize] _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin3')
+action = 'finalize', required_text = 'campaign finalize'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: finalize.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+__ test_current_route_has_matching_agent_instruction[report_stop-stop search] __
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin4')
+action = 'report_stop', required_text = 'stop search'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: report_stop.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+_ test_current_route_has_matching_agent_instruction[request_scope_change-new authorized campaign] _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin5')
+action = 'request_scope_change', required_text = 'new authorized campaign'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: request_scope_change.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+_ test_current_route_has_matching_agent_instruction[confirm-authorized confirmation plan] _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_current_route_has_matchin6')
+action = 'confirm', required_text = 'authorized confirmation plan'
+
+    @pytest.mark.parametrize('action,required_text', [
+        ('wait', 'collect existing work'),
+        ('diagnose', 'campaign review-packet'),
+        ('propose', 'campaign submit'),
+        ('finalize', 'campaign finalize'),
+        ('report_stop', 'stop search'),
+        ('request_scope_change', 'new authorized campaign'),
+        ('confirm', 'authorized confirmation plan'),
+    ])
+    def test_current_route_has_matching_agent_instruction(tmp_path, action, required_text):
+        current = plateau(tmp_path)
+        if action == 'propose':
+            current['trials'][-1]['result_status'] = 'improved'
+            save(tmp_path, current)
+        elif action == 'confirm':
+            current['frozen'] = current['best']
+            current['status'] = 'finalized'
+            save(tmp_path, current)
+        elif action != 'diagnose':
+            research.record_research_decision(tmp_path, slow(current, action))
+    
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['action'] == action
+        assert task['proposal_allowed'] is (action == 'propose')
+>       assert f'Current action: {action}.' in task['prompt']
+E       AssertionError: assert 'Current action: confirm.' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:34: AssertionError
+__________ test_plateau_requests_event_review_before_another_proposal __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_plateau_requests_event_re0')
+
+    def test_plateau_requests_event_review_before_another_proposal(tmp_path):
+        plateau(tmp_path)
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['review_required'] is True
+        assert not task['proposal_allowed']
+>       assert 'campaign record-decision' in task['prompt']
+E       AssertionError: assert 'campaign record-decision' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:47: AssertionError
+___________ test_recorded_diagnosis_keeps_prompt_paused_after_reload ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-45/test_recorded_diagnosis_keeps_0')
+
+    def test_recorded_diagnosis_keeps_prompt_paused_after_reload(tmp_path):
+        current = plateau(tmp_path)
+        research.record_research_decision(tmp_path, slow(current, 'diagnose'))
+        assert json.loads((tmp_path / 'campaign.json').read_text())['pending_slow_decision']
+        task = campaign.next_proposal(tmp_path)
+        assert task['next_action']['review_required'] is False
+        assert task['next_action']['action'] == 'diagnose'
+>       assert 'diagnose' in task['prompt']
+E       AssertionError: assert 'diagnose' in 'Read the baseline, effective best and recent DEV results below; consult history_index and feedback details for older ...ritance. In control mode write the independent decision sidecar acknowledging latest feedback, then submit --decision.'
+
+examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py:59: AssertionError
+=========================== short test summary info ============================
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[wait-collect existing work]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[diagnose-campaign review-packet]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[propose-campaign submit]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[finalize-campaign finalize]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[report_stop-stop search]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[request_scope_change-new authorized campaign]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_current_route_has_matching_agent_instruction[confirm-authorized confirmation plan]
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_plateau_requests_event_review_before_another_proposal
+FAILED examples/modular_neural_isp_phase1/overlay/tests/test_next_action_prompt.py::test_recorded_diagnosis_keeps_prompt_paused_after_reload
+9 failed in 0.07s

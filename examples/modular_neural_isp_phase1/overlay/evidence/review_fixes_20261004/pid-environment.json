@@ -1,0 +1,6 @@
+{
+  "os_getpid": 5,
+  "proc_self_stat_pid": 7137,
+  "NSpid": "NSpid:\t7137\t5",
+  "effect": "runner requires owner PID/start identity; mismatch refuses native stage launch with exit 125; production runner unchanged"
+}

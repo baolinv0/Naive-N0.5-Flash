@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "experiment_id": "PLACEHOLDER_REVIEWED_EXPERIMENT_ID",
+  "authorization_ref": "PLACEHOLDER_EXISTING_APPROVAL_REFERENCE",
+  "source_revision": "PLACEHOLDER_ACTUAL_SOURCE_REVISION",
+  "baseline_config": "../PLACEHOLDER/baseline.yaml",
+  "control_template": "../PLACEHOLDER/authorized-control.json",
+  "profile_ref": "../PLACEHOLDER/dev-profile.json",
+  "evidence_mode": "live_model_api",
+  "strategies": ["random", "tpe", "naive_scalar", "naive_rich", "naive_fast_slow"],
+  "search_seeds": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110],
+  "max_trials": 12,
+  "min_delta": 0.01,
+  "campaign_walltime_seconds": null,
+  "schedule_seed": 20261005,
+  "experiment_limits": {
+    "total_gpu_hours": null,
+    "walltime_seconds": null
+  },
+  "slow_reviewer": "naive",
+  "models": {
+    "naive": {
+      "base_url": "http://PLACEHOLDER_NAIVE_HOST:8000/v1",
+      "model": "PLACEHOLDER_ACTUAL_NAIVE_WEIGHTS_ID",
+      "timeout_seconds": 120,
+      "max_response_bytes": 8388608,
+      "temperature": 0
+    },
+    "qwen": {
+      "enabled": false,
+      "input_token_reservation": null,
+      "base_url": "http://PLACEHOLDER_QWEN_VL_HOST:8001/v1",
+      "model": "PLACEHOLDER_ACTUAL_OPEN_QWEN_VL_WEIGHTS_ID",
+      "timeout_seconds": 120,
+      "max_response_bytes": 8388608,
+      "temperature": 0
+    }
+  },
+  "model_limits": {
+    "max_calls": null,
+    "max_input_tokens_per_call": null,
+    "max_output_tokens_per_call": null,
+    "max_total_tokens": null,
+    "max_total_input_tokens": null,
+    "max_total_output_tokens": null
+  },
+  "campaign_model_limits": {
+    "max_calls": null,
+    "max_input_tokens_per_call": null,
+    "max_output_tokens_per_call": null,
+    "max_total_tokens": null,
+    "max_total_input_tokens": null,
+    "max_total_output_tokens": null
+  },
+  "confirmation": {
+    "seeds_by_block": [
+      [1001, 1002, 1003],
+      [1004, 1005, 1006],
+      [1007, 1008, 1009],
+      [1010, 1011, 1012],
+      [1013, 1014, 1015],
+      [1016, 1017, 1018],
+      [1019, 1020, 1021],
+      [1022, 1023, 1024],
+      [1025, 1026, 1027],
+      [1028, 1029, 1030]
+    ],
+    "delta_useful_db": 0.1,
+    "delta_strategy": 0.1
+  }
+}

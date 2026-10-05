@@ -298,10 +298,7 @@ def train_net(model: PhotofinishingModule, tr_device: torch.device, in_tr_dir: s
   if delete_temp_folder:
     logging.info('Deleting temp folders')
     for dataset in (train, val):
-      for handle in dataset._h5_cache.values():
-        handle.close()
-    for temp_dir in {train._temp_dir, val._temp_dir}:
-      shutil.rmtree(temp_dir)
+      dataset.delete_cache()
     logging.info('Done!')
 
 
@@ -313,7 +310,7 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
 
   val_loss = {}
   image_psnr = []
-  batch_count = 0
+  image_count = 0
 
   with torch.no_grad():
     for idx, batch in enumerate(loader):
@@ -324,13 +321,14 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
       out_images = model(in_images, training_mode=True)
 
       _, detailed_b_loss = loss_for_batch(model, out_images, gt_images, compute_loss)
+      batch_images = gt_images.shape[0]
       for key, value in detailed_b_loss.items():
         if key != 'psnr':
-          val_loss[key] = val_loss.get(key, 0.0) + value
+          val_loss[key] = val_loss.get(key, 0.0) + value * batch_images
       image_psnr.extend(image_psnr_values(out_images['output'], gt_images))
-      batch_count += 1
+      image_count += batch_images
 
-  if not batch_count:
+  if not image_count:
     raise ValueError('Validation set contains no batches')
 
   if writer:
@@ -347,7 +345,7 @@ def validate(model: PhotofinishingModule, loader: DataLoader, val_device: torch.
     writer.add_images('GT images/val', gt_images, global_step)
 
   for key in val_loss:
-    val_loss[key] /= batch_count
+    val_loss[key] /= image_count
   val_loss.update(summarize_psnr(image_psnr))
   if not val_loss['finite']:
     raise ValueError('Validation produced non-finite per-image PSNR')

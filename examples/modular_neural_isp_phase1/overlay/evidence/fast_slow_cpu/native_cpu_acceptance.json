@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "synthetic_cpu_engineering",
+  "live_naive": false,
+  "real_camera_quality_claim": false,
+  "dataset": {
+    "train_images": 2,
+    "dev_images": 1,
+    "eval_size": 256,
+    "seed": 7,
+    "epochs": 2,
+    "test_evaluated": false
+  },
+  "code_ref_search": "326009cc1b735ff83bbcf8919f98c0f495cc74c4",
+  "upstream_ref": "5a845f673edfdf92de18dcfc20d204f79f1ba38b",
+  "native_search_trials": [
+    {
+      "run_id": "exp_001",
+      "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.001,
+        "weight_decay": 0.0
+      },
+      "dev_psnr": 21.33483380210185,
+      "num_images": 1,
+      "valid": true,
+      "decision": "Baseline establishes the initial DEV score.",
+      "comparison_run_id": null,
+      "feedback_revision": "r001",
+      "diagnostics_status": "complete",
+      "proposal_ready_at_feedback": true,
+      "observation_count": 1,
+      "group_count": 0,
+      "case_count": 5,
+      "roi_measurement_rows": 50,
+      "cpu_elapsed_seconds": 14.226097283004492,
+      "gpu_hours": 0.0
+    },
+    {
+      "run_id": "exp_002",
+      "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.0005,
+        "weight_decay": 0.0
+      },
+      "dev_psnr": 23.086679601438625,
+      "num_images": 1,
+      "valid": true,
+      "decision": "DEV PSNR increased from 21.33483380 to 23.08667960, exceeding min_delta 0.01000000 dB; keep this recipe.",
+      "comparison_run_id": "exp_001",
+      "feedback_revision": "r001",
+      "diagnostics_status": "complete",
+      "proposal_ready_at_feedback": true,
+      "observation_count": 160,
+      "group_count": 4,
+      "case_count": 5,
+      "roi_measurement_rows": 50,
+      "cpu_elapsed_seconds": 13.99860795999848,
+      "gpu_hours": 0.0
+    },
+    {
+      "run_id": "exp_003",
+      "recipe": {
+        "loss_family": "mse",
+        "optimizer": "adam",
+        "learning_rate": 0.00025,
+        "weight_decay": 0.0
+      },
+      "dev_psnr": 25.535658402616356,
+      "num_images": 1,
+      "valid": true,
+      "decision": "DEV PSNR increased from 23.08667960 to 25.53565840, exceeding min_delta 0.01000000 dB; keep this recipe.",
+      "comparison_run_id": "exp_002",
+      "feedback_revision": "r001",
+      "diagnostics_status": "complete",
+      "proposal_ready_at_feedback": true,
+      "observation_count": 160,
+      "group_count": 4,
+      "case_count": 5,
+      "roi_measurement_rows": 50,
+      "cpu_elapsed_seconds": 13.657170532002056,
+      "gpu_hours": 0.0
+    },
+    {
+      "run_id": "exp_004",
+      "recipe": {
+        "loss_family": "l1",
+        "optimizer": "adam",
+        "learning_rate": 0.00025,
+        "weight_decay": 0.0
+      },
+      "dev_psnr": 26.027616565255116,
+      "num_images": 1,
+      "valid": true,
+      "decision": "DEV PSNR increased from 25.53565840 to 26.02761657, exceeding min_delta 0.01000000 dB; keep this recipe.",
+      "comparison_run_id": "exp_003",
+      "feedback_revision": "r001",
+      "diagnostics_status": "complete",
+      "proposal_ready_at_feedback": true,
+      "observation_count": 160,
+      "group_count": 4,
+      "case_count": 5,
+      "roi_measurement_rows": 50,
+      "cpu_elapsed_seconds": 13.844554442999652,
+      "gpu_hours": 0.0
+    }
+  ],
+  "frozen_winner": {
+    "run_id": "exp_004",
+    "dev_psnr": 26.027616565255116,
+    "recipe": {
+      "loss_family": "l1",
+      "optimizer": "adam",
+      "learning_rate": 0.00025,
+      "weight_decay": 0.0
+    }
+  },
+  "confirmation": {
+    "scope": {
+      "kind": "original_dev"
+    },
+    "planned_pairs": 1,
+    "complete_pairs": 1,
+    "mean_delta_db": 4.692782763153264,
+    "conclusion_within_this_synthetic_scope": "supported_in_scope",
+    "adaptive_dev_bias": true,
+    "statistical_significance": false,
+    "pairs": [
+      {
+        "seed": 7,
+        "replicate": 1,
+        "status": "complete",
+        "baseline_run_id": "exp_001",
+        "winner_run_id": "exp_002",
+        "delta_db": 4.692782763153264,
+        "per_image": {
+          "status": "complete",
+          "paired_count": 1,
+          "expected_count": 1,
+          "baseline_native_count": 1,
+          "winner_native_count": 1,
+          "missing_in_winner": [],
+          "missing_in_baseline": [],
+          "missing_in_both": [],
+          "errors": [],
+          "metric_tolerance_db": 1e-06,
+          "scope": "full",
+          "deltas": [
+            {
+              "sample_id": "DEV:synthetic_validation_000.png",
+              "delta_db": 4.692782763153264
+            }
+          ]
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "task_key": "baseline:7:1",
+        "status": "completed",
+        "score": 21.33483380210185,
+        "cpu_elapsed_seconds": 13.94494029800262,
+        "gpu_hours": 0.0
+      },
+      {
+        "task_key": "winner:7:1",
+        "status": "completed",
+        "score": 26.027616565255116,
+        "cpu_elapsed_seconds": 14.267262130997551,
+        "gpu_hours": 0.0
+      }
+    ],
+    "scenes": {
+      "status": "available",
+      "profile_revision": "p001",
+      "pairs": [
+        {
+          "seed": 7,
+          "replicate": 1,
+          "unmapped_sample_ids": [],
+          "expected_count": 1,
+          "annotated_count": 1,
+          "scenes": [
+            {
+              "scene_id": "synthetic_scene_0",
+              "paired_images": 1,
+              "mean_delta_db": 4.692782763153264
+            }
+          ]
+        }
+      ],
+      "unit": "paired per-image differences within each seed; seeds and images are not pooled"
+    },
+    "repeat_terminal_call_reuses_tasks": true,
+    "search_best_unchanged": true
+  },
+  "closure": {
+    "W": {
+      "status": "pending",
+      "reason": "Requires actual ordered baseline and three feedback-consuming live proposal events"
+    },
+    "Q_status_within_synthetic_scope": "supported_in_scope",
+    "R": {
+      "status": "unavailable",
+      "reason": "Requires a prespecified equal-budget strategy comparator"
+    },
+    "P": {
+      "status": "unavailable",
+      "reason": "Requires agreed quality/device/user conditions and independent coverage"
+    },
+    "cost": {
+      "gpu_hours": 0.0,
+      "scope": "search+confirmation+calibration+final_test",
+      "ledger": {
+        "search_gpu_hours": 0.0,
+        "confirmation_gpu_hours": 0.0,
+        "calibration_gpu_hours": 0,
+        "final_test_gpu_hours": 0.0,
+        "known": true,
+        "gpu_hours": 0.0,
+        "reserved_gpu_hours": 0.0,
+        "active_attempts": [],
+        "reason": "Reconciled actual records and summary lower bounds",
+        "unattributed_gpu_hours": 0.0
+      },
+      "reserved_gpu_hours": 0.0,
+      "inference_cost": "unavailable",
+      "inference_tokens": "unavailable"
+    }
+  },
+  "limits": [
+    "Scripted proposer; not a live Naive acceptance.",
+    "One synthetic DEV image and one repeated search seed; no independent quality conclusion.",
+    "Confirmation has per-image/scene evidence; no confirmation ROI profile configured.",
+    "Selection/ranking remained native mean per-image RGB DEV PSNR."
+  ],
+  "code_ref_confirmation": "d15482d",
+  "runtime_modules_matched_confirmation_source_at_execution": true,
+  "final_guard_collection_verification": {
+    "code_ref": "9d0731a",
+    "same_task_ids": true,
+    "same_run_directories": true,
+    "search_best_unchanged": true,
+    "no_retraining_or_new_evaluation": true,
+    "claims_unchanged": true
+  }
+}

@@ -19,6 +19,8 @@ import argparse
 import logging
 import os
 import sys
+import json
+from pathlib import Path
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__) + "/.."))
 
@@ -48,7 +50,9 @@ def print_line(end: Optional[bool]=False, length: Optional[int]=30):
 def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: str,
              gt_te_dir: str, data_te_dir: str, post_process_ltm: bool, no_ds: bool,
              result_dir: Optional[str] = None, eval_size: Optional[int] = 512,
-             quarter_resolution: bool = False, recipe: Optional[dict] = None) -> str:
+             quarter_resolution: bool = False, recipe: Optional[dict] = None,
+             diagnostics_profile: Optional[str] = None,
+             diagnostics_root_mapping: Optional[dict] = None) -> str:
   """Tests a given trained model."""
 
   if data_te_dir is None:
@@ -70,15 +74,45 @@ def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: st
   ssim = np.zeros((len(pairs), 1))
   total_time = 0
   rows = []
+  roi_rows = []
+  diagnostic_errors = []
+  profile = None
+  roi_profile = None
+  diagnostic_successes = 0
+  frozen_diagnostics = None
+  evaluation_identity = None
+  if diagnostics_profile:
+    try:
+      from tm_research.diagnostics import (load_sample_masks, measure_fixed_regions, resolve_sample_id,
+                                          validate_evaluation_profile, diagnostics_snapshot)
+      profile = json.loads(Path(diagnostics_profile).read_text(encoding='utf-8'))
+      if profile['eval_size'] != eval_size or quarter_resolution or no_ds:
+        raise ValueError('Diagnostic profile evaluation transform does not match')
+      mapping = diagnostics_root_mapping
+      if isinstance(mapping, (str, Path)):
+        mapping = json.loads(Path(mapping).read_text(encoding='utf-8'))
+      evaluation_identity = validate_evaluation_profile(profile,
+        {'input_dir': in_te_dir, 'gt_dir': gt_te_dir, 'metadata_dir': data_te_dir}, eval_size,
+        root_mapping=mapping)
+      frozen_diagnostics = diagnostics_snapshot(profile)
+      if profile.get('roi_profile_ref'):
+        roi_profile = json.loads(Path(profile['roi_profile_ref']).read_text(encoding='utf-8'))
+    except Exception as exc:
+      diagnostic_errors.append(f'profile: {type(exc).__name__}: {exc}')
+      profile = None
   for idx, (in_file, gt_file, data_file) in enumerate(pairs):
     print(f'Processing {idx+1}/{len(pairs)}...')
     lsrgb_img, gt_img = load_image_pair(in_file, gt_file, data_file, image_size=eval_size,
                                        quarter=quarter_resolution)
     lsrgb_img_tensor = img_to_tensor(lsrgb_img).unsqueeze(0).to(device=te_device, dtype=torch.float32)
+    if te_device.type == 'cuda':
+      torch.cuda.synchronize(te_device)
     start = time.time()
     with torch.no_grad():
       out_img_tensor = model(lsrgb_img_tensor, post_process_ltm=post_process_ltm,
                              training_mode=eval_size is not None)['output']
+    if te_device.type == 'cuda':
+      torch.cuda.synchronize(te_device)
     end = time.time()
     elapsed = end - start
     total_time += elapsed
@@ -86,20 +120,68 @@ def test_net(model: PhotofinishingModule, te_device: torch.device, in_te_dir: st
     gt_tensor = img_to_tensor(gt_img).unsqueeze(0).to(device=te_device, dtype=torch.float32)
     psnr[idx] = image_psnr_values(out_img_tensor, gt_tensor)[0]
     ssim[idx] = get_ssim(out_img, gt_img)
+    sample_id = ''
+    input_relpath = Path(in_file).relative_to(in_te_dir).as_posix()
+    # Float measurements happen before PNG-8 export, independently of core scores.
+    if profile is not None:
+      try:
+        sample_id = resolve_sample_id({'input_relpath': input_relpath}, profile)
+        if roi_profile is not None:
+          masks = load_sample_masks(profile, sample_id, gt_img.shape[:2], profile['profile_revision'])
+          metric_config = dict(roi_profile['metric_config'], layout='NCHW', sample_id=sample_id,
+                               profile_revision=profile['profile_revision'], profile_ref=profile['profile_ref'])
+          roi_rows.extend(measure_fixed_regions(out_img_tensor, gt_tensor, masks, metric_config))
+        diagnostic_successes += 1
+      except Exception as exc:
+        diagnostic_errors.append(f'{input_relpath}: {type(exc).__name__}: {exc}')
     if result_dir is not None:
       image_path = imwrite(out_img, os.path.join(images_dir, os.path.splitext(os.path.basename(in_file))[0]),
                            'PNG-8')
       rows.append({'image': os.path.basename(in_file), 'psnr': float(psnr[idx, 0]),
-                   'ssim': float(ssim[idx, 0]), 'time_seconds': elapsed, 'output_image': image_path})
+                   'ssim': float(ssim[idx, 0]), 'time_seconds': elapsed, 'output_image': image_path,
+                   'sample_id': sample_id, 'input_relpath': input_relpath})
   mean_time = total_time / len(pairs)
   summary = summarize_psnr(psnr[:, 0].tolist())
   if result_dir is not None:
     csv_path = os.path.join(result_dir, 'per_image.csv')
     with open(csv_path, 'w', newline='') as f:
-      writer = csv.DictWriter(f, fieldnames=['image', 'psnr', 'ssim', 'time_seconds', 'output_image'])
+      writer = csv.DictWriter(f, fieldnames=['image', 'psnr', 'ssim', 'time_seconds', 'output_image',
+                                            'sample_id', 'input_relpath'])
       writer.writeheader()
       writer.writerows(rows)
-    write_json_file({**summary, 'mean_ssim': float(ssim.mean()),
+    diagnostic_artifacts = {}
+    if diagnostics_profile:
+      diagnostic_artifacts = {'diagnostics_profile_ref': str(Path(diagnostics_profile).resolve()),
+                              'diagnostics_errors': diagnostic_errors,
+                              'diagnostics_evaluation_identity': evaluation_identity,
+                              'profile_revision': profile.get('profile_revision') if profile else None,
+                              'diagnostics_status': ('partial' if diagnostic_errors and diagnostic_successes
+                                else 'failed' if diagnostic_errors else 'complete')}
+      if roi_profile is not None:
+        diagnostic_artifacts['roi_profile_ref'] = profile['roi_profile_ref']
+      if frozen_diagnostics is not None:
+        try:
+          snapshot_path = os.path.join(result_dir, 'diagnostics_snapshot.json')
+          with open(snapshot_path, 'w') as f:
+            json.dump(frozen_diagnostics, f, indent=2, sort_keys=True, allow_nan=False)
+          diagnostic_artifacts['diagnostics_snapshot_ref'] = snapshot_path
+        except Exception as exc:
+          diagnostic_errors.append(f'diagnostics_snapshot.json: {type(exc).__name__}: {exc}')
+          diagnostic_artifacts['diagnostics_status'] = 'failed'
+      if roi_rows:
+        try:
+          roi_path = os.path.join(result_dir, 'roi_metrics.csv')
+          with open(roi_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['sample_id', 'roi_id', 'metric_name', 'value', 'n_pixels',
+              'region_fraction', 'effective_mask_id', 'valid_reason', 'profile_revision', 'profile_ref',
+              'metric_definition'])
+            writer.writeheader()
+            writer.writerows(roi_rows)
+          diagnostic_artifacts['roi_metrics_csv'] = roi_path
+        except Exception as exc:
+          diagnostic_errors.append(f'roi_metrics.csv: {type(exc).__name__}: {exc}')
+          diagnostic_artifacts['diagnostics_status'] = 'failed'
+    write_json_file({**summary, **diagnostic_artifacts, 'mean_ssim': float(ssim.mean()),
                      'protocol': protocol, 'eval_size': eval_size, 'recipe': recipe,
                      'mean_time_seconds': mean_time,
                      'per_image_csv': csv_path, 'images_dir': images_dir},
@@ -133,6 +215,10 @@ def get_args():
                       help='Directory containing config JSON files.')
   parser.add_argument('--result-dir', dest='result_dir', default='results',
                       help='Directory to save the results report (.txt).')
+  parser.add_argument('--diagnostics-profile', default=None,
+                      help='Optional frozen TRAIN/DEV profile; float ROI diagnostics never affect PSNR.')
+  parser.add_argument('--diagnostics-root-mapping', default=None,
+                      help='Optional JSON source-root to relocated-root mapping; source files must remain readable for validation.')
   args = parser.parse_args()
   if not args.no_ds and not args.quarter_resolution:
     args.eval_size = 512 if args.eval_size is None else args.eval_size
@@ -163,7 +249,9 @@ if __name__ == '__main__':
   results = test_net(model=net, te_device=device, in_te_dir=args.in_te_dir, gt_te_dir=args.gt_te_dir,
                      data_te_dir=args.data_te_dir, post_process_ltm=args.post_process_ltm, no_ds=args.no_ds,
                      result_dir=args.result_dir, eval_size=args.eval_size,
-                     quarter_resolution=args.quarter_resolution, recipe=config.get('recipe'))
+                     quarter_resolution=args.quarter_resolution, recipe=config.get('recipe'),
+                     diagnostics_profile=args.diagnostics_profile,
+                     diagnostics_root_mapping=args.diagnostics_root_mapping)
   print(results)
   with open(os.path.join(args.result_dir, os.path.splitext(os.path.basename(args.model_path))[0] + '.txt'), 'w') as f:
     f.write(results)

@@ -4,7 +4,9 @@
 
 - [安装入口](START_HERE.md)
 - [运行说明](overlay/README_PHASE1.md)
+- [部署与真实闭环验收使用手册](overlay/docs/validation-manual_CN.md)
 - [当前研究合同](overlay/docs/engineering-contract.md)
+- [数据与科学证据可靠性修复](overlay/docs/reliability-fixes-20261005.md)
 - [本轮实现与实测记录](overlay/docs/review-fix-verification.md)
 - [二次 review 后续修复与验证](overlay/docs/rereview-followup.md)
 - [ARIS 任务入口](overlay/docs/tm_research_task.md)

@@ -10,11 +10,21 @@ aris "Read docs/aris-campaign-task.md and execute it. Config: configs/baseline.e
 
 1. Read the config and this task. The model and data protocol are fixed. Allowed research changes are only `loss_family` (original/MSE/L1), Adam/AdamW, learning rate, and optional weight decay. Do not edit model files, data, metrics, seed, initialization, or trial budget.
 2. If the campaign does not exist, call `python -m tm_research.cli campaign init --config <config> --campaign-dir <campaign> --max-trials <limit> --no-gain-limit <limit> --min-delta <calibrated-dB> --wait`. Otherwise resume with `campaign status`, preserving its stored threshold. Initialization runs the baseline before any proposal. Use adequate Bash execution time and keep its session active. If your host preserves background workers, you may omit `--wait` and use `campaign wait --timeout 60`; if a wait times out, continue collecting the same run instead of submitting another.
-3. Call `python -m tm_research.cli campaign next --campaign-dir <campaign>`. Read the complete returned DEV evidence, latest decision and best recipe. If `active` is present, wait for it, then call `campaign next` again to obtain fresh evidence before checking `proposal_allowed`. If `proposal_allowed` is false in that fresh response, stop proposing and go to step 7.
-4. Reason from the actual latest result. Explain which recipe change should improve DEV performance and why. Consider failed hypotheses and invalid runs as evidence. Write one JSON proposal containing `recipe`, a nonempty `hypothesis`, and `based_on` with a recorded `run_id`, its observed `dev_psnr` (null for an invalid run), and a concrete `observation`. Read `docs/tm_research_task.md` for the JSON schema. You can inspect that run's DEV logs and artifacts to understand a failure. Never inspect TEST images or TEST metrics to choose a recipe.
-5. Call `python -m tm_research.cli campaign submit --campaign-dir <campaign> --proposal <proposal.json> --wait`. This actually trains and independently reloads the model. Do not replace it with a predicted score, mock tool result, or grid lookup. A failed CLI call is not a scientific result; inspect the returned error and correct only the proposal or operational issue it identifies.
-6. Read the stored run result and controller decision. Explicitly distinguish `completed` from `valid`, and `no_gain` from `improved`. `raw_best` records the highest score; `best` is the retained effective candidate. Only a score above `best.dev_psnr + min_delta` is improved. Do not change the frozen threshold or treat a raw-best fluctuation as progress. Return to step 3 and choose the next recipe using this new evidence. Never write all proposals in advance.
-7. Call `python -m tm_research.cli campaign finalize --campaign-dir <campaign>` once no more proposals are allowed (or the user explicitly asks to stop). If the baseline was invalid, report its logs and failure rather than freezing a nonexistent best model. Report the chosen DEV run, recipe, score, protocol, trial count, and stop reason. TEST is a separate final operation: call `python -m tm_research.cli final-test --campaign-dir <campaign>` only when final held-out evaluation was included in the user's task, after freezing the choice. Do not feed its result back into proposal selection.
+3. Call `python -m tm_research.cli campaign next --campaign-dir <campaign>`. Read the complete returned DEV evidence, latest decision, best recipe and `next_action`. Use `next_action.action` as the sole action selector, following the table below. `proposal_allowed` is only a submission guard: false does not mean the research has ended. After waiting, diagnosis or a recorded review, call `campaign next` again and follow that fresh route.
+4. Only when `next_action.action` is `propose` and `proposal_allowed` is true, reason from the actual latest result. Explain which recipe change should improve DEV performance and why. Consider failed hypotheses and invalid runs as evidence. Write one JSON proposal containing `recipe`, a nonempty `hypothesis`, and `based_on` with a recorded `run_id`, its observed `dev_psnr` (null for an invalid run), and a concrete `observation`. Read `docs/tm_research_task.md` for the JSON schema. You can inspect that run's DEV logs and artifacts to understand a failure. Never inspect TEST images or TEST metrics to choose a recipe.
+5. Submit only on that `propose` route: call `python -m tm_research.cli campaign submit --campaign-dir <campaign> --proposal <proposal.json> --wait`, adding `--decision <decision.json>` in control mode. This actually trains and independently reloads the model. Do not replace it with a predicted score, mock tool result, or grid lookup. A failed CLI call is not a scientific result; inspect the returned error and correct only the proposal or operational issue it identifies. If the route and guard disagree, inspect the current status and fetch a fresh route; do not submit or infer permission to finalize.
+6. Read the stored run result and controller decision. Explicitly distinguish `completed` from `valid`, and `no_gain` from `improved`. `raw_best` records the highest score; `best` is the retained effective candidate. Only a score above `best.dev_psnr + min_delta` is improved. Do not change the frozen threshold or treat a raw-best fluctuation as progress. Return to step 3 and let the new route determine whether to wait, diagnose, propose or close. Never write all proposals in advance.
+7. Close search only on `finalize` / `report_stop`, or an explicit user stop. Report the chosen DEV run, recipe, score, protocol, trial count, and stop reason. Freeze once with `python -m tm_research.cli campaign finalize --campaign-dir <campaign>` when there is a valid retained candidate, no unresolved active/pending launch, and closure is permitted; if already frozen, reuse that selection. If the baseline was invalid or the candidate is missing, report the logs and failure without attempting to freeze. A diagnosis, wait or scope-change pause does not enter this step. TEST is a separate final operation: call `python -m tm_research.cli final-test --campaign-dir <campaign>` only when final held-out evaluation was included in the user's task and allowed by the control contract, after freezing the choice. Do not feed its result back into proposal selection.
+
+| `next_action.action` | Required host action |
+|---|---|
+| `wait` | Collect the same active run with `campaign wait --timeout 60`, then fetch fresh `campaign next`. A timeout does not authorize another launch. If no run is active and a recorded pause remains, preserve it and report the wait reason. |
+| `diagnose` | Read the reason and evidence. Repair missing observation artifacts within the existing protocol, or investigate the recorded hold/unknown execution state. If `review_required` is true, read `campaign review-packet --trigger <next_action.trigger_id>`, compare competing explanations and save the outcome through `campaign record-decision --decision <review.json>`. Then fetch fresh `campaign next`; do not finalize because proposals are blocked. |
+| `propose` | Follow steps 4–6 only while `proposal_allowed` is true. When resuming a paused review, its justified continuation must already have been recorded against the current trigger; recording it does not itself launch a trial. |
+| `finalize` | Follow step 7 to freeze a valid, unfrozen retained candidate; never freeze a nonexistent result or replace an existing frozen selection. |
+| `report_stop` | End search and report the reason. Follow step 7 for a valid, unfrozen retained candidate only when closure is permitted; an invalid baseline or an already frozen campaign needs reporting, not another freeze. |
+| `request_scope_change` | Pause the affected work and present the required scope change. Preserve the current model, data, protocol and budgets; only a new authorized campaign may enlarge them. |
+| `confirm` | Use only the already authorized confirmation plan for the frozen selection. Resume its recorded task IDs through `confirmation next/report`; initialize only if that authorized plan is not already registered. If the plan is complete, report it instead of recreating or rerunning it. Without a plan, report confirmation pending. |
 
 State and trial evidence live in the campaign and run directories. Reuse them when the ARIS session restarts. A real Naive/ARIS research claim requires a real configured service and session transcript showing feedback-informed proposals. Local simulated-proposer tests and assistant-mediated integration do not establish that claim.
 
@@ -41,9 +51,10 @@ Pilot acceptance requires four valid, actually executed trials and the transcrip
 ## Delegation policy for the live pilot
 
 This section governs the steps above. It is an operator/ARIS policy, not a new
-controller feature or a security boundary. The CLI validates recipes, citations,
-run validity and DEV selection; it does not enforce human approval, compute caps,
-or the scientific meaning of a hypothesis. Do not claim otherwise.
+controller feature or a security boundary. Legacy mode validates recipes, citations, run validity and DEV selection. The opt-in
+`--control` mode additionally checks explicit authorization/resource boundaries and
+requires independent decision sidecars. Neither mode judges the scientific meaning
+of a hypothesis or prevents arbitrary shell bypass. See the new-mode workflow below.
 
 Rationale: Shao et al., [Human–AI Collaboration at Scale](https://www.alphaxiv.org/abs/2608.human-ai-collaboration-at-scale.pdf),
 sections 3–5, distinguish task criticality (reversibility, visibility, impact),
@@ -101,8 +112,8 @@ as superseded. Do not repair a disappointing score by changing what is measured.
 ### 4. Preserve useful friction; bound mechanical recovery
 
 A timeout means inspect/wait for the existing run, not submit another.
-One operational repair attempt per incident is allowed within existing caps,
-only if it leaves the scientific protocol unchanged. Repeated identical failure,
+Operational repair is allowed within existing caps when new diagnostic evidence
+supports it and the scientific protocol remains unchanged. Repeated identical failure,
 unknown execution state, or insufficient remaining compute pauses new launches.
 Never bypass duplicate-recipe rejection, edit campaign state, or extend trial
 limits to obtain four valid runs. Invalid trials still consume the existing
@@ -123,7 +134,7 @@ Leave TEST untouched in this pilot, including images, labels, metrics and manual
 script calls. Outside this pilot, a previously explicit authorization for final
 held-out evaluation suffices: record it and freeze the DEV choice before
 `final-test`; no redundant approval is needed. Otherwise request it once.
-The CLI freeze check alone is not authorization. Once TEST is observed, do not
+In legacy mode the CLI freeze check alone is not authorization; control mode also checks the frozen TEST permission. Once TEST is observed, do not
 use it to select recipes or present that same set as fresh confirmation after
 further tuning. Record accidental exposure and ask the operator for a new
 held-out evaluation plan.
@@ -154,3 +165,16 @@ Pause the affected action, continue safe read-only preparation, and resume only
 within the recorded authorization. End the pilot with the operator reviewing
 one rejected hypothesis and one unresolved alternative explanation, so execution
 also develops research judgment.
+
+
+## Opt-in fast/slow workflow
+
+Follow [fast-slow-research.md](fast-slow-research.md) when the operator supplies a control contract. Initialize using `--control` and an optional frozen `--profile`; do not add these policy fields to training YAML. Read `next.feedback`, cite measured observation IDs separately from competing hypotheses, and submit the unchanged proposal with `--decision`. A historical `based_on` or explicit comparator never changes partial-recipe inheritance from effective best or fixed initialization.
+
+The action table in step 3 governs this mode too: `next.next_action.action` selects the action; `proposal_allowed` only guards submission. A `diagnose` route with `review_required: true` requires `campaign review-packet` for its current trigger and a recorded slow outcome before fetching the next route. Save outcomes with `campaign record-decision` even if no run follows. A `diagnose`, `wait` or `request_scope_change` route pauses work without freezing the campaign. Resolving an operational hold requires new evidence and cannot enlarge search limits. Use `campaign feedback`, `review-packet`, `report` and `memory` for reviewable evidence; never invent measurements, scene tags, costs or visual access.
+
+Respect durable `pending_slow_decision`: a logged diagnosis, pause, scope-change request, stop or finalize action is not permission to submit. A justified continuation requires an explicit slow-review `propose` matching the current trigger; an ordinary fast proposal cannot clear that gate. Collect existing jobs while paused. After an operational hold is resolved with `diagnose`, remain paused until the continuation decision is recorded. Stops and requests to change scope do not authorize reopening search.
+
+Capture actual service startup/model exchanges and actual campaign tool results using [workflow-evidence.md](workflow-evidence.md), then register their manifest through the normal CLI. Preserve original records; never synthesize an accepted event log after the fact. Missing/incomplete or unsupported exports keep automatic W pending. Fixtures verify the capture and validator only; they are not a live Naive acceptance.
+
+After freezing, a `confirm` route permits only the already authorized confirmation plan through `confirmation init/next/report`. Resume an existing plan rather than initializing it again; report terminal pairs without retrying them. The route supplies no new data or compute authorization. Original DEV still chooses checkpoints; independent data are evaluated after freeze and TEST is never relabeled. Preserve every failed/incomplete seed pair. Report workflow, recipe, strategy and product claims separately. Current implementation tests do not complete the live pilot described above.
