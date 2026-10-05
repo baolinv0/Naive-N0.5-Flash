@@ -2,7 +2,9 @@
 
 本手册用于回答两个先后独立的问题：**现有系统能否可靠执行闭环？真实 Naive 是否使用实验反馈决定下一次实验？** 第一次验收不要求 PSNR 上涨。科研收益要在执行验收后，通过冻结确认和等预算策略对照检验。
 
-源码核对基线：`feat/aris-fast-slow-research-20261003` 的 `ed868446e659020666d6c0a11bdfd43a59092c41`，2026-10-04。本手册新增文档，没有运行真实 Naive、真实数据 GPU 训练或目标节点全量回归。此前的限定回归通过不能代替目标部署验收；仓库保留的完整原生测试记录仍有失败，见 [原始全量尝试及部署限制](../evidence/review_fixes_20261004/README.md)。
+源码核对基线：`feat/aris-fast-slow-research-20261003` 的 `0a05bff757cf9c412a527da952499dc31ec5bba7`，2026-10-05。本手册没有运行真实 Naive、真实数据 GPU 训练或目标节点全量回归。此前的限定回归通过不能代替目标部署验收；仓库保留的完整原生测试记录仍有失败，见 [原始全量尝试及部署限制](../evidence/review_fixes_20261004/README.md)。
+
+本手册与[科研循环实验方案](plans/naive-research-loop-experiments-20261005_CN.md)是同一验证链的两个阶段：本手册负责 A 部署验收和 B 真实 Naive 闭环；实验方案负责 D 等预算策略比较及独立 CONFIRM 统计。C 冻结确认是两者之间的接口。除非明确创建正式策略 campaign，否则本手册中的 `max_search_trials=4`、四轮 W 验收和 `slow_policy=2` 不应扩展成正式主实验预算。
 
 ## 1. 首次验收做什么
 
@@ -42,7 +44,7 @@ export ISP_RUNTIME="$ISP_VALIDATION_ROOT/modular_neural_isp"
 
 git clone --branch feat/aris-fast-slow-research-20261003 \
   https://github.com/baolinv0/Naive-N0.5-Flash.git "$ISP_SOURCE"
-git -C "$ISP_SOURCE" checkout ed868446e659020666d6c0a11bdfd43a59092c41
+git -C "$ISP_SOURCE" checkout 0a05bff757cf9c412a527da952499dc31ec5bba7
 git clone https://github.com/SamsungLabs/modular_neural_isp.git "$ISP_RUNTIME"
 git -C "$ISP_RUNTIME" checkout 5a845f673edfdf92de18dcfc20d204f79f1ba38b
 cp -a "$ISP_SOURCE/examples/modular_neural_isp_phase1/overlay/." "$ISP_RUNTIME/"
@@ -152,7 +154,7 @@ YAML 相对路径从 **YAML 所在目录**解析。把模板移到 `pilot-inputs
 
 ### 5.2 资源合同
 
-`limits` 六项都须填写数字：`job_walltime_seconds` 为有限正数，`allocated_gpus` 为非负整数，`max_search_trials=4`；总 GPUh、确认预留、校准预留均为有限非负数。搜索每次按最大占用先预约：
+`limits` 六项都须填写数字：`job_walltime_seconds` 为有限正数，`allocated_gpus` 为非负整数，pilot 的 `max_search_trials=4`；总 GPUh、确认预留、校准预留均为有限非负数。正式策略实验另建独立 control campaign，将其预注册的 `K`、策略组和确认预算写入新合同，不能修改已启动的 pilot。搜索每次按最大占用先预约：
 
 \[
 B_{job}=\frac{\text{allocated\_gpus}\times\text{job\_walltime\_seconds}}{3600},\qquad
@@ -426,9 +428,11 @@ PY
 
 ### 10.2 研究收益和产品证据另验
 
-等预算比较建议四组：固定/随机搜索；Naive 只看聚合 PSNR；Naive 看丰富反馈无慢复盘；Naive 看丰富反馈且有慢复盘。先冻结预算、确认方法和评价：独立确认收益、有效实验率、训练耗时、推理 token/费用、有效候选所需时间、人工介入。
+等预算比较由[科研循环实验方案](plans/naive-research-loop-experiments-20261005_CN.md)统一规定为五组：Random、TPE、Naive Scalar、Naive Rich Fast、Naive Rich Fast/Slow。它扩展了早期四组建议，并把 TPE 作为更强的非 LLM 搜索基线。正式组使用独立 campaign、相同训练/评测门禁和预注册确认，不复用本 pilot 的四轮预算。
 
-**当前没有一组现成 CLI 开关可直接运行这四组消融。** 需要预先登记独立策略实验及宿主输入/行为控制，不能虚构 `--disable-slow` 等参数。本次 W 通过不能代替 R；报告中的推理成本 unavailable 也不能记成 0。
+正式实验的初始规划为每组 10 个配对搜索块、每个 campaign 最多 12 次训练、冻结后 3 个新种子确认；最多 900 次训练和 300 次独立确认评测。该数字是资源上限，不是已验证的统计功效或耗时预测。正式实验还必须预先冻结 `min_delta`、有用提升、提示、策略随机种子、失败处理和成本采集方法。
+
+**当前没有一组现成 CLI 开关可直接运行这些策略消融。** 需要预先登记独立策略实验及宿主输入/行为控制，不能虚构 `--disable-slow` 等参数。本次 W 通过不能代替 R；报告中的推理成本 unavailable 也不能记成 0。
 
 PSNR 改善不自动证明人脸、高光、自然度或新相机效果，也不自动归因于 TM 模块。产品验证 `P` 保持另行设计，不加入本次 DEV 选择循环。
 
